@@ -56,3 +56,11 @@ dist/
 
 # Claude Code local config
 .claude/
+
+# ─── Original reference extraction ──────────────────────────────────────────
+# Kept on disk UNTOUCHED as the source of truth for visual/functional
+# reference (per the migration brief). NOT committed: it holds the
+# unredacted demo data (112 Aadhaar-shaped values, bank details, addresses)
+# and this repository is public. The ZIP itself is likewise local-only.
+original-reference/
+Title CRM*-handoff.zip

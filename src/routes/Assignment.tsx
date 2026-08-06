@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { ASSIGN_STAGES, PAIRS, staffName } from '@/data/seed'
+import { ASSIGN_STAGES, PAIRS } from '@/data/seed'
 import { api, queryKeys } from '@/lib/api'
 import { Banner, Chip, Kpi, Loading, PageHead, SectionHead } from '@/components/ui'
 import type { Order, Staff } from '@/data/types'
