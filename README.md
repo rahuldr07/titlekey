@@ -3,8 +3,27 @@
 A multi-tenant production system for title-abstract companies — a US title-search
 operation run by an India-based back office.
 
-Built as a complete, self-contained HTML/CSS/JavaScript application. No build step,
-no dependencies, no server. Open a file in a browser and the whole product runs.
+Ported from a self-contained HTML/CSS/JS prototype to **Vite + React 19 +
+TypeScript + TanStack Router + TanStack Query**. The original prototype is kept
+in `title-crm-897/` as the specification.
+
+---
+
+## Quick start
+
+```bash
+pnpm install
+pnpm dev
+```
+
+Opens on <http://localhost:5173>.
+
+| Command | What it does |
+|---|---|
+| `pnpm dev` | Dev server with HMR |
+| `pnpm build` | Type-check then production build to `dist/` |
+| `pnpm preview` | Serve the production build |
+| `pnpm typecheck` | `tsc --noEmit` |
 
 ---
 
@@ -12,117 +31,98 @@ no dependencies, no server. Open a file in a browser and the whole product runs.
 
 ```
 .
-├── README.md
-├── .gitignore
-└── title-crm-897/
-    ├── README.md                          Original handoff notes
-    └── project/
-        ├── Title CRM (original).html      Main application (Google Fonts CDN)
-        ├── Title CRM - standalone.html    Same app, fonts inlined — works offline
-        └── uploads/
-            ├── titlecrm.html              Earlier revision (superseded)
-            ├── pasted-*.png               Reference screenshots
-            └── titlecrm/
-                ├── titlecrm.html          Duplicate of the above
-                └── titleflow.html         Companion prototype — "Titleflow"
+├── index.html                  Vite entry
+├── vite.config.ts
+├── src/
+│   ├── main.tsx                QueryClient + Session + Router providers
+│   ├── router.tsx              All routes, fully typed
+│   ├── styles/theme.css        Design tokens + every component style
+│   ├── data/
+│   │   ├── types.ts            Domain types
+│   │   └── seed.ts             Demo data, ported from the prototype
+│   ├── lib/
+│   │   ├── api.ts              Data access — swap for real fetch calls
+│   │   ├── sla.ts              SLA decomposition and risk detection
+│   │   ├── format.ts           Dates, money, initials, due tone
+│   │   ├── nav.ts              Navigation model + permission filtering
+│   │   └── session.tsx         Signed-in user, tenant, theme
+│   ├── components/
+│   │   ├── Shell.tsx           Sidebar, header, layout
+│   │   ├── DataTable.tsx       Filter pills, selects, search, empty states
+│   │   └── ui.tsx              KPI, Chip, Due, AvatarStack, Banner…
+│   └── routes/
+│       ├── Dashboard.tsx       built
+│       ├── Orders.tsx          built
+│       ├── OrderDetail.tsx     built
+│       └── Placeholder.tsx     Stub for screens not yet ported
+└── title-crm-897/              Original prototype — the specification
 ```
-
-Every page is fully self-contained: CSS lives in `<style>`, JavaScript in
-`<script>`, and all fonts and images are embedded as `data:` URIs. There are no
-external stylesheets, no script files and no linked images — so there are no
-relative paths that can break.
 
 ---
 
-## How to run locally
+## Port status
 
-**Simplest — no tooling required.** Double-click:
+**Complete** — the stack, the full design system (tokens, dark mode, every shared
+component), the domain model and SLA logic, permission-filtered navigation, and
+all routes registered and navigable.
 
-```
-title-crm-897/project/Title CRM - standalone.html
-```
+**Built screens** — Dashboard, Orders, Order detail.
 
-Use the standalone build; its fonts are embedded, so it renders correctly with no
-internet connection.
-
-**Via a local server** (optional — useful if you want a clean `localhost` URL):
-
-```bash
-cd title-crm-897/project
-python -m http.server 8000
-```
-
-Then open <http://localhost:8000/Title%20CRM%20-%20standalone.html>
-
-> `Title CRM (original).html` is the same application but loads Inter and IBM Plex
-> Mono from Google Fonts, so it needs a connection to display correctly.
+**Stubbed** — the remaining 19 screens render a placeholder naming the render
+function in the prototype that specifies them (`S.payroll`, `S.assign`, …). Each
+is a self-contained job.
 
 ---
 
-## Main pages and features
+## Features working today
 
-The application is a single-page app with 39 screens across six areas.
-
-### Production
-| Screen | What it does |
-|---|---|
-| Dashboard | Live KPIs, clickable pipeline filter, past-due queue |
-| Orders | Full order list with filters, search and per-stage assignee avatars |
-| Order detail | Stage assignment, documents, notes, QC ratings |
-| Assignment | Automatic work distribution with a decision trail and dry-run |
-| Order intake | Incoming order triage |
-| My work | Per-person queue for staff accounts |
-| Report generator | Field capture by report section |
-
-### Business
-Leads pipeline with follow-up tracking, and invoicing with per-client statements.
-
-### HRMS
-Attendance with GPS check-in, leave management, payroll runs, payslips,
-recruitment and petty cash.
-
-### Reference
-County coverage and a link monitor that tracks county record sources.
-
-### Insight
-Reports across six tabs — Received, Assigned, Turnaround, By staff,
-By department and Quality.
-
-### Configure
-Company settings, staff, clients, departments, roles, workflow and SLA rules.
-
-### Notable behaviour
-- **Multi-tenant** — switch companies from the sidebar; data and settings follow.
-- **Role-based access** — sign in as any staff member from the header avatar and
-  the navigation changes to match their permissions.
-- **Dark mode** — full theme, toggled from the header.
-- **Self-review prevention** — the same person cannot both do and QC a stage.
-- **SLA tracking** — distinguishes "behind an internal checkpoint" from
-  "cannot finish in time", before an order is actually late.
-- **Responsive** — the sidebar collapses to a drawer below 820px.
-- **Accessible** — skip link, keyboard-navigable rows, focus management,
-  and a `prefers-reduced-motion` fallback.
-
-> The clock is fixed at Mon 3 Aug 2026, 5:30 PM ET. Every relative due date
-> ("2h overdue", "in 5h") is calculated from that point.
+- **Multi-tenant** — switch companies from the sidebar.
+- **Role-based navigation** — change the account in the header and the sidebar
+  rebuilds. A Staff account sees only its own orders; that is the permission
+  working, not a limitation of the screen.
+- **Dark mode** — full theme via CSS custom properties.
+- **SLA risk detection** — distinguishes *behind an internal checkpoint* from
+  *cannot finish in time*, before an order is actually late.
+- **Self-review blocking** — a red avatar ring marks the same person set to both
+  do and QC a stage.
+- **Filtering** — pipeline chips, filter pills, selects and search.
+- **Responsive** — sidebar collapses to a drawer below 820px.
 
 ---
 
-## Technologies used
+## Technologies
 
 | | |
 |---|---|
-| **HTML5** | Semantic markup, ARIA roles, `<template>` |
-| **CSS3** | Custom properties for theming, Grid, Flexbox, `@media` queries, `:has()` |
-| **JavaScript (ES2020+)** | Vanilla — no framework, no build step |
-| **Fonts** | Inter, IBM Plex Mono — embedded as base64 in the standalone build |
-| **Architecture** | Hash-based client-side router, template-literal rendering |
-
-No frameworks, no bundler, no `node_modules`, no compilation.
+| React 19 | `use()` hook, context as provider |
+| TypeScript 5.9 | `strict`, `noUncheckedIndexedAccess` |
+| TanStack Router | Type-safe routes — `navigate()` and `<Link to>` are checked |
+| TanStack Query | All data access, with real loading states |
+| Vite 6 | Dev server and build |
+| CSS custom properties | Theming, no CSS framework |
 
 ---
 
-## Browser support
+## Notes carried over from the prototype
 
-Any modern browser. Uses `:has()`, CSS custom properties and `backdrop-filter`,
-so it needs Chrome/Edge 105+, Firefox 121+ or Safari 15.4+.
+**The clock is fixed** at Mon 3 Aug 2026, 5:30 PM ET (`NOW` in `src/data/seed.ts`).
+Every relative due date is computed from it, so the screens read consistently.
+
+**The SLA split is a guess.** The 50/11/25/10/4 per-stage shares are the
+prototype designer's own estimate — "I picked these shares from how the work
+reads, not from timings." They live in `src/lib/sla.ts` as data with a `source`
+marker, so a measured percentile split can replace them. Do not hard-code them
+elsewhere.
+
+**One deliberate deviation from the design.** The prototype's sidebar group
+labels were `#5A6B86` on `#131A2B`, which measures 3.31:1. At 9.5px that is not
+WCAG "large text", so it needed 4.5:1 and failed. Changed to `#7C8CA8`
+(5.27:1). Everything else matches the prototype exactly.
+
+`html { scroll-padding-top }` was also added so keyboard focus doesn't scroll
+behind the 56px sticky header — WCAG 2.2 SC 2.4.11, W3C failure technique F110.
+
+**Demo data is redacted.** The prototype's staff records originally carried
+identity-document-shaped values (Aadhaar, PAN, UAN, ESI, bank account/IFSC),
+addresses and contact numbers. These were replaced with placeholders before this
+repository was made public.

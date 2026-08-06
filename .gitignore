@@ -49,3 +49,10 @@ $RECYCLE.BIN/
 *.swo
 *~
 .claude/
+
+# Vite
+dist/
+.vite/
+
+# Claude Code local config
+.claude/
