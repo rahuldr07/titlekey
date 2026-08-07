@@ -6,14 +6,14 @@ import { router } from './router'
 import { SessionProvider } from '@/lib/session'
 import './styles/theme.css'
 
+/**
+ * TanStack Query at the root. The current screens read in-memory data ported
+ * from the original prototype; when an API exists, queries slot in here without
+ * component changes.
+ */
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: {
-      // Reference data barely moves; live order state should not be trusted stale.
-      staleTime: 30_000,
-      refetchOnWindowFocus: false,
-      retry: 1,
-    },
+    queries: { staleTime: 30_000, refetchOnWindowFocus: false, retry: 1 },
   },
 })
 

@@ -1,66 +1,15 @@
-# ─── Source archive ─────────────────────────────────────────────────────────
-# The original handoff ZIP duplicates every file already tracked below.
-*-handoff.zip
-
-# ─── Build tooling / generated artifacts ────────────────────────────────────
-# support.js is the design-tool runtime shim ("GENERATED from dc-runtime —
-# do not edit"). It is not referenced by any page and is not site code.
-title-crm-897/project/support.js
-# Generated preview thumbnail, not part of the site.
-title-crm-897/project/.thumbnail
-
-# ─── Secrets — never commit ─────────────────────────────────────────────────
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-*.p12
-*.pfx
-credentials.json
-secrets.json
-
-# ─── Dependencies & build output ────────────────────────────────────────────
 node_modules/
 dist/
-build/
-.cache/
-.parcel-cache/
-.turbo/
+.env
+.env.local
+.env.*.local
 *.log
-npm-debug.log*
-yarn-error.log*
-
-# ─── OS files ───────────────────────────────────────────────────────────────
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
 Thumbs.db
-ehthumbs.db
-desktop.ini
-$RECYCLE.BIN/
-
-# ─── Editors ────────────────────────────────────────────────────────────────
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
 .claude/
 
-# Vite
-dist/
-.vite/
-
-# Claude Code local config
-.claude/
-
-# ─── Original reference extraction ──────────────────────────────────────────
-# Kept on disk UNTOUCHED as the source of truth for visual/functional
-# reference (per the migration brief). NOT committed: it holds the
-# unredacted demo data (112 Aadhaar-shaped values, bank details, addresses)
-# and this repository is public. The ZIP itself is likewise local-only.
+# The untouched ZIP extraction and the ZIP itself hold the unredacted demo
+# data (identity-document-shaped values). This repository is public, so they
+# stay local-only. title-crm-897/ is the REDACTED reference copy and IS committed.
 original-reference/
 Title CRM*-handoff.zip

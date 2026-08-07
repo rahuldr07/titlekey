@@ -1,233 +1,173 @@
 import { useNavigate } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
-import { ASSIGN_STAGES, PAIRS } from '@/data/seed'
-import { api, queryKeys } from '@/lib/api'
-import { Banner, Chip, Kpi, Loading, PageHead, SectionHead } from '@/components/ui'
-import type { Order, Staff } from '@/data/types'
-
-/**
- * Auto-assign, then review the exceptions.
- *
- * The engine places each open stage on the emptiest eligible person. Eligibility
- * is department membership × availability × capacity × NOT self-review — the
- * same person may not both do and QC one order.
- *
- * Stages it cannot place are not lost; they surface below, grouped by WHY,
- * because each cause has a different fix.
- */
-type ExceptionCause = 'capacity' | 'unavailable' | 'no-dept' | 'self'
+import { STAFF, AVAIL, who } from '@/data/seed'
+import { RULES } from '@/data/seed2'
+import { EXCLABEL, runEngine, type ExceptionCause } from '@/lib/engine'
+import { useSession } from '@/lib/session'
+import { Banner, Chip, Kpi, PageHead, Sec } from '@/components/ui'
 
 const CAUSE: Record<ExceptionCause, readonly [string, string]> = {
   capacity: ['Everyone eligible was already at their daily target',
     'Raise the target, add someone to that department, or accept the queue.'],
   unavailable: ['Everyone eligible was on leave or off shift',
-    'Arrange cover, or add a rule that routes elsewhere when a department is empty.'],
+    'Cover, or a rule that routes elsewhere when a department is empty.'],
   'no-dept': ['Nobody belongs to that department',
     'Add a member, or the stage cannot run at all.'],
   self: ['The only person free had already done the paired stage',
     'Self-review is blocked, so the work waited rather than being checked by its author.'],
 }
-
-interface Placement { order: Order; stage: string; who: Staff }
-interface Exception { order: Order; stage: string; cause: ExceptionCause }
-
-function runEngine(orders: Order[], staff: Staff[]) {
-  const load: Record<string, number> = {}
-  for (const s of staff) load[s.id] = s.open
-
-  const placements: Placement[] = []
-  const exceptions: Exception[] = []
-
-  for (const order of orders) {
-    if (order.done) continue
-    for (const stage of ASSIGN_STAGES) {
-      if (order.assignments[stage]) continue
-
-      const inDept = staff.filter((s) => s.departments.includes(stage) && s.active)
-      if (inDept.length === 0) { exceptions.push({ order, stage, cause: 'no-dept' }); continue }
-
-      const available = inDept.filter((s) => s.availability === 'ok')
-      if (available.length === 0) { exceptions.push({ order, stage, cause: 'unavailable' }); continue }
-
-      // Segregation of duties: not the person who did the paired stage.
-      const paired = PAIRS[stage]
-      const eligible = paired
-        ? available.filter((s) => order.assignments[paired] !== s.id)
-        : available
-      if (eligible.length === 0) { exceptions.push({ order, stage, cause: 'self' }); continue }
-
-      const withRoom = eligible.filter((s) => (load[s.id] ?? 0) < s.capacity)
-      if (withRoom.length === 0) { exceptions.push({ order, stage, cause: 'capacity' }); continue }
-
-      // Emptiest first, measured as a fraction of their own target.
-      withRoom.sort((a, b) => (load[a.id]! / a.capacity) - (load[b.id]! / b.capacity))
-      const pick = withRoom[0]!
-      load[pick.id] = (load[pick.id] ?? 0) + 1
-      placements.push({ order, stage, who: pick })
-    }
-  }
-  return { placements, exceptions, load }
-}
+const EX_GRID = '160px 140px 150px 1fr'
+const PL_GRID = '150px 130px 160px 1fr'
 
 export function Assignment() {
   const navigate = useNavigate()
-  const { data: orders } = useQuery({ queryKey: queryKeys.orders, queryFn: api.orders })
-  const { data: staff } = useQuery({ queryKey: queryKeys.staff, queryFn: api.staff })
+  const { toast } = useSession()
+  const { placements, exc, load } = runEngine()
 
-  if (!orders || !staff) return <Loading what="the assignment pass" />
-
-  const { placements, exceptions, load } = runEngine(orders, staff)
-
-  const byCause = exceptions.reduce<Record<string, Exception[]>>((acc, e) => {
-    (acc[e.cause] ??= []).push(e)
+  const byCause = exc.reduce<Record<string, typeof exc>>((acc, e) => {
+    ;(acc[e.cause] ??= []).push(e)
     return acc
   }, {})
-
-  const roster = staff.filter((s) => s.departments.length > 0)
+  const roster = STAFF.filter((s) => s.dep.length > 0)
 
   return (
     <>
       <PageHead
         title="Assignment"
-        sub="What the engine would place right now, and what it could not."
-        actions={<button className="btn">Run the pass</button>}
+        sub="Auto-assign on arrival, then review the exceptions."
+        actions={<>
+          <button className="btn g" onClick={() => toast('Dry run — nothing was changed')}>Dry run</button>
+          <button className="btn" onClick={() => toast(`${placements.length} stage${placements.length === 1 ? '' : 's'} assigned`)}>Run the pass</button>
+        </>}
       />
 
       <div className="kpis">
-        <Kpi title="Would place" icon="⇄" value={placements.length} detail="stages with an owner" />
-        <Kpi title="Could not place" icon="⚑" value={exceptions.length}
-          tone={exceptions.length ? 'alert' : undefined}
-          detailTone={exceptions.length ? 'bad' : 'ok'}
-          detail={exceptions.length ? 'waiting on a person' : 'everything placed'} />
-        <Kpi title="People available" icon="◎"
-          value={roster.filter((s) => s.availability === 'ok').length}
-          detail={`of ${roster.length} on the roster`} />
-        <Kpi title="Self-review blocked" icon="⊘"
-          value={(byCause.self ?? []).length}
-          detail="the rule that cannot be turned off" />
+        <Kpi t="Would place" icon="⇄" v={placements.length} d="stages with an owner" />
+        <Kpi t="Could not place" icon="⚑" v={exc.length}
+          cls={exc.length ? 'alert' : undefined} dTone={exc.length ? 'bad' : 'ok'}
+          d={exc.length ? 'waiting on a person' : 'everything placed'} />
+        <Kpi t="People available" icon="◎" v={roster.filter((s) => s.avail === 'ok').length}
+          d={`of ${roster.length} on the roster`} />
+        <Kpi t="Self-review blocked" icon="⊘" v={(byCause.self ?? []).length}
+          d="the rule that cannot be turned off" />
       </div>
 
-      {exceptions.length > 0 && (
-        <Banner tone="r" icon="◷" title={`${exceptions.length} stages could not be placed`}>
-          They are not lost — they are waiting for a person to place them by hand.
-          Grouped below by why, because each cause has a different fix.
+      <Sec>The rules, in the order they run</Sec>
+      <div className="card"><div className="cb">
+        <div className="rows" style={{ border: 'none', borderRadius: 0 }}>
+          {RULES.map((r) => (
+            <div className="rw" key={r.id}>
+              <span className={r.on ? 'ok' : 'gr'}>{r.on ? '✓' : '·'}</span>
+              <span>
+                <b>{r.n}</b>
+                <div className="sd">When {r.when} → {r.then}</div>
+              </span>
+              <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <Chip tone={r.k === 'block' ? 'd' : r.k === 'route' ? 'b' : r.k === 'cover' ? 'r' : 'v'}>{r.k}</Chip>
+                {r.lock && <span className="gr" style={{ fontSize: '11.5px' }}>cannot be turned off</span>}
+              </span>
+            </div>
+          ))}
+        </div>
+        <p className="gr" style={{ fontSize: '12.5px', marginTop: 12 }}>
+          A dated change log needs somewhere to store it — nothing here writes to a
+          database yet, so edits live only in this session.
+        </p>
+      </div></div>
+
+      {exc.length > 0 && (
+        <Banner tone="r" icon="◷" title={`${exc.length} stages the engine could not place`}>
+          These are not lost — they are waiting for a person to place them by hand.
+          Grouped by why, because each cause has a different fix.
         </Banner>
       )}
 
-      {Object.entries(byCause)
-        .sort((a, b) => b[1].length - a[1].length)
-        .map(([cause, list]) => {
-          const [headline, remedy] = CAUSE[cause as ExceptionCause]
-          return (
-            <div key={cause}>
-              <SectionHead>{headline} — {list.length}</SectionHead>
-              <Banner tone="r" icon="◷" title="What would clear these">{remedy}</Banner>
-              <div className="tbl">
-                <div className="tsc">
-                  <div style={{ minWidth: 700 }}>
-                    <div className="trow h" style={{ gridTemplateColumns: EX_GRID }}>
-                      <span>Order</span><span>Stage</span><span>Client</span><span>Product</span>
-                    </div>
-                    <div className="tb">
-                      {list.map((e) => (
-                        <div
-                          key={`${e.order.id}-${e.stage}`}
-                          className="trow clickable"
-                          style={{ gridTemplateColumns: EX_GRID }}
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => navigate({ to: '/orders/$orderId', params: { orderId: e.order.id } })}
-                          onKeyDown={(ev) => {
-                            if (ev.key === 'Enter' || ev.key === ' ') {
-                              ev.preventDefault()
-                              navigate({ to: '/orders/$orderId', params: { orderId: e.order.id } })
-                            }
-                          }}
-                        >
-                          <div className="cell"><div className="v mono">{e.order.id}</div></div>
-                          <div className="cell"><div className="v">{e.stage}</div></div>
-                          <div className="cell"><div className="v">{e.order.client}</div></div>
-                          <div className="cell"><div className="v">{e.order.product}</div></div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+      {Object.entries(byCause).sort((a, b) => b[1].length - a[1].length).map(([cause, list]) => {
+        const [headline, remedy] = CAUSE[cause as ExceptionCause]
+        return (
+          <div key={cause}>
+            <Sec>{headline} — {list.length}</Sec>
+            <Banner tone="r" icon="◷" title="What would clear these">{remedy}</Banner>
+            <div className="tbl"><div className="tsc"><div style={{ minWidth: 760 }}>
+              <div className="trow h" style={{ gridTemplateColumns: EX_GRID }}>
+                <span>Order</span><span>Stage</span><span>Client</span><span>What happened</span>
               </div>
-            </div>
-          )
-        })}
+              <div className="tb">
+                {list.map((e) => (
+                  <div
+                    key={`${e.o.id}-${e.stage}`}
+                    className="trow"
+                    style={{ gridTemplateColumns: EX_GRID }}
+                    role="button" tabIndex={0}
+                    onClick={() => navigate({ to: '/orders/$orderId', params: { orderId: e.o.id } })}
+                    onKeyDown={(ev) => { if (ev.key === 'Enter') navigate({ to: '/orders/$orderId', params: { orderId: e.o.id } }) }}
+                  >
+                    <div className="cell"><div className="v mono" style={{ fontSize: '12.5px' }}>{e.o.id}</div>
+                      <div className="s">{e.o.pr}</div></div>
+                    <div className="cell"><div className="v" style={{ fontSize: '12.5px' }}>{e.stage}</div></div>
+                    <div className="cell"><div className="v" style={{ fontSize: '12.5px' }}>{e.o.cl}</div></div>
+                    <div className="cell"><div className="v" style={{ fontSize: '12.5px' }}>{EXCLABEL[e.cause][0]}</div></div>
+                  </div>
+                ))}
+              </div>
+            </div></div></div>
+          </div>
+        )
+      })}
 
-      <SectionHead>What the pass would do</SectionHead>
+      <Sec>What the pass would do</Sec>
       {placements.length === 0 ? (
         <div className="tbl"><div className="empty"><span className="ei">✓</span>
           <p>Every stage already has an owner.</p></div></div>
       ) : (
-        <div className="tbl">
-          <div className="tsc">
-            <div style={{ minWidth: 760 }}>
-              <div className="trow h" style={{ gridTemplateColumns: PL_GRID }}>
-                <span>Order</span><span>Stage</span><span>Would go to</span><span>Why them</span>
-              </div>
-              <div className="tb">
-                {placements.map((p) => (
-                  <div key={`${p.order.id}-${p.stage}`} className="trow" style={{ gridTemplateColumns: PL_GRID }}>
-                    <div className="cell"><div className="v mono">{p.order.id}</div>
-                      <div className="s">{p.order.client}</div></div>
-                    <div className="cell"><div className="v">{p.stage}</div></div>
-                    <div className="cell"><div className="v">{p.who.name}</div></div>
-                    <div className="cell"><div className="s">
-                      emptiest in {p.stage} at {load[p.who.id]}/{p.who.capacity}
-                    </div></div>
-                  </div>
-                ))}
-              </div>
-            </div>
+        <div className="tbl"><div className="tsc"><div style={{ minWidth: 760 }}>
+          <div className="trow h" style={{ gridTemplateColumns: PL_GRID }}>
+            <span>Order</span><span>Stage</span><span>Would go to</span><span>Why them</span>
           </div>
-        </div>
+          <div className="tb">
+            {placements.map((p) => (
+              <div key={`${p.o.id}-${p.stage}`} className="trow" style={{ gridTemplateColumns: PL_GRID, cursor: 'default' }}>
+                <div className="cell"><div className="v mono">{p.o.id}</div><div className="s">{p.o.cl}</div></div>
+                <div className="cell"><div className="v">{p.stage}</div></div>
+                <div className="cell"><div className="v">{p.who.n}</div></div>
+                <div className="cell"><div className="s">{p.why}</div></div>
+              </div>
+            ))}
+          </div>
+        </div></div></div>
       )}
 
-      <SectionHead>Where everyone stands</SectionHead>
+      <Sec>Where everyone stands</Sec>
       <div className="card"><div className="cb">
         <div className="rows" style={{ border: 'none', borderRadius: 0 }}>
           {roster.map((s) => {
-            const used = load[s.id] ?? 0
-            const pct = Math.min(100, (used / s.capacity) * 100)
+            const used = load[s.id] ?? s.open
+            const pct = Math.min(100, (used / s.cap) * 100)
             return (
               <div className="rw" key={s.id}>
-                <span className={s.availability === 'ok' ? 'ok' : 'warn'}>
-                  {s.availability === 'ok' ? '✓' : '·'}
-                </span>
+                <span className={s.avail === 'ok' ? 'ok' : 'warn'}>{s.avail === 'ok' ? '✓' : '·'}</span>
                 <span>
-                  <b>{s.name}</b>
-                  <div className="sd">{s.departments.join(', ')}</div>
+                  <b>{s.n}</b>
+                  <div className="sd">{s.dep.join(', ')}</div>
                   <div className="bar" style={{ marginTop: 6, maxWidth: 260 }}>
                     <i style={{ width: `${pct}%`, background: pct >= 100 ? 'var(--bad)' : 'var(--brand2)' }} />
                   </div>
                 </span>
                 <span style={{ textAlign: 'right' }}>
-                  <span className="mono" style={{ fontSize: '12.5px' }}>{used}/{s.capacity}</span>
-                  {s.availability !== 'ok' && (
-                    <div style={{ marginTop: 4 }}>
-                      <Chip tone="r">{s.availability === 'leave' ? 'On leave' : 'Off shift'}</Chip>
-                    </div>
+                  <span className="mono" style={{ fontSize: '12.5px' }}>{used}/{s.cap}</span>
+                  {s.avail !== 'ok' && (
+                    <div style={{ marginTop: 4 }}><Chip tone={AVAIL[s.avail]![1]}>{AVAIL[s.avail]![0]}</Chip></div>
                   )}
                 </span>
               </div>
             )
           })}
         </div>
+        <p className="gr" style={{ fontSize: '12.5px', marginTop: 12 }}>
+          This follows the same rules as the automatic pass — department membership,
+          availability, target, and no self-review. {who('sk')} appears in both Typing
+          and Typing QC; the self-review rule filters him out of QC on orders he typed.
+        </p>
       </div></div>
-
-      <p className="gr" style={{ fontSize: '12.5px', marginTop: 12 }}>
-        The engine is greedy least-loaded: it fills the emptiest eligible person first,
-        measured against their own target. That enforces a hard ceiling but does not
-        guarantee an optimal placement when capacity is tight — see the note in
-        <code> src/routes/Assignment.tsx</code>.
-      </p>
     </>
   )
 }
-
-const EX_GRID = '150px 130px 130px 1fr'
-const PL_GRID = '150px 130px 160px 1fr'

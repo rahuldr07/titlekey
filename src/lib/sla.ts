@@ -1,106 +1,81 @@
 /**
- * SLA decomposition — one client promise split into per-stage checkpoints.
- *
- * ⚠ The 50/11/25/10/4 split is the prototype designer's stated GUESS:
- * "I picked these shares from how the work reads, not from timings."
- *
- * It is kept here so behaviour matches the design, but it is exported as data
- * with a `source` marker so a measured percentile split can replace it once
- * real cycle times exist. Do not hard-code these numbers anywhere else.
+ * Stage budgets and checkpoints — ported from the original BUDGET / checkpoints /
+ * orderPlan. Shares are a percentage of the clock with per-product overrides
+ * (40Y and FS+ carry their own splits), and a buffer is held back at the end.
+ * The base numbers are the original designer's stated placeholders.
  */
-import { NOW } from '@/data/seed'
-import type { Order } from '@/data/types'
+import { ASSIGN_STAGES, NOW, PAIRS, prod, type Order } from '@/data/seed'
+import { BUDGET, SLA, isDefaultRule, sharesFor } from '@/data/seed2'
 
-export type BudgetSource = 'default-guess' | 'measured-percentile'
-
-export interface StageShare {
-  department: string
-  share: number
-  source: BudgetSource
+/** client × product → hours; most specific rule wins, then the default row. */
+export function slaFor(client: string, product: string): number {
+  const exact = SLA.find((r) => r.cl === client && r.pr === product)
+  if (exact) return exact.h
+  const cl = SLA.find((r) => r.cl === client && r.pr === 'Any')
+  if (cl) return cl.h
+  const def = SLA.find(isDefaultRule)
+  return def?.h ?? prod(product).h
 }
 
-export const STAGE_SHARES: StageShare[] = [
-  { department: 'Search',    share: 0.50, source: 'default-guess' },
-  { department: 'Search QC', share: 0.11, source: 'default-guess' },
-  { department: 'Typing',    share: 0.25, source: 'default-guess' },
-  { department: 'Typing QC', share: 0.10, source: 'default-guess' },
-  { department: 'RTS',       share: 0.04, source: 'default-guess' },
-]
+export interface Checkpoint { stage: string; budgetH: number; dueAtH: number }
 
-/** Fraction of the promise held back and not allotted to any stage. */
-export const BUFFER = 0.1
-
-export interface Checkpoint {
-  department: string
-  budgetHours: number
-  /** Cumulative hours from receipt by which this stage should be done. */
-  dueAtHours: number
-  done: boolean
-  behind: boolean
-}
-
-export interface OrderPlan {
-  rows: Checkpoint[]
-  /** Behind an internal checkpoint, but still recoverable. */
-  behind: boolean
-  /** The stages left need more time than the promise has remaining. */
-  doomed: boolean
-  shortHours: number
-  behindAt: string | null
-}
-
-/**
- * The distinction the dashboard depends on: an order can be not-yet-late and
- * still unable to finish on time.
- */
-export function orderPlan(order: Order, now: Date = NOW): OrderPlan {
-  const usable = order.promiseHours * (1 - BUFFER)
-  const elapsedH = (now.getTime() - order.receivedAt.getTime()) / 3_600_000
-  const remainingH = (order.dueAt.getTime() - now.getTime()) / 3_600_000
-
-  let cumulative = 0
-  const rows: Checkpoint[] = STAGE_SHARES.map((s) => {
-    const budgetHours = usable * s.share
-    cumulative += budgetHours
-    // A stage counts as done once someone is on it and the order has moved past it.
-    const done = isStageComplete(order, s.department)
-    return {
-      department: s.department,
-      budgetHours,
-      dueAtHours: cumulative,
-      done,
-      behind: !done && elapsedH > cumulative,
-    }
+/** The checkpoint each department must hit, as hours from arrival. */
+export function checkpoints(slaH: number, pr: string): Checkpoint[] {
+  const usable = slaH * (1 - BUDGET.buffer / 100)
+  const shares = sharesFor(pr)
+  let cum = 0
+  return ASSIGN_STAGES.map((stage) => {
+    const budgetH = (usable * (shares[stage] ?? 0)) / 100
+    cum += budgetH
+    return { stage, budgetH, dueAtH: cum }
   })
-
-  const needed = rows.filter((r) => !r.done).reduce((a, r) => a + r.budgetHours, 0)
-  const shortHours = needed - remainingH
-
-  return {
-    rows,
-    behind: rows.some((r) => r.behind),
-    doomed: !order.done && shortHours > 0,
-    shortHours: Math.max(0, shortHours),
-    behindAt: rows.find((r) => r.behind)?.department ?? null,
-  }
 }
-
-/** Stage order defines "past it" — a stage is complete once a later one is active. */
-const STAGE_SEQUENCE = ['Search', 'Search QC', 'Typing', 'Typing QC', 'RTS']
 
 const STATUS_STAGE: Record<string, string> = {
   search: 'Search', wip: 'Search', sq: 'Search QC', typing: 'Typing',
   tqc: 'Typing QC', rts: 'RTS', upload: 'RTS', sent: 'done', docreq: 'Search',
 }
-
-function isStageComplete(order: Order, department: string): boolean {
-  if (order.done) return true
-  const current = STATUS_STAGE[order.status]
-  if (current === 'done') return true
-  const at = STAGE_SEQUENCE.indexOf(current ?? '')
-  const mine = STAGE_SEQUENCE.indexOf(department)
+function stageDone(o: Order, stage: string): boolean {
+  if (o.done) return true
+  const cur = STATUS_STAGE[o.stt]
+  if (cur === 'done') return true
+  const at = ASSIGN_STAGES.indexOf(cur ?? '')
+  const mine = ASSIGN_STAGES.indexOf(stage)
   return at >= 0 && mine >= 0 && mine < at
 }
 
-/** True when the order cannot finish in the time its promise has left. */
-export const atRisk = (order: Order, now: Date = NOW) => orderPlan(order, now).doomed
+export interface OrderPlan {
+  rows: (Checkpoint & { done: boolean; behind: boolean })[]
+  behind: boolean
+  doomed: boolean
+  short: number
+  behindAt: string | null
+}
+
+/** behind = recoverable slippage; doomed = the stages left need more time than remains. */
+export function orderPlan(o: Order, now: Date = NOW): OrderPlan {
+  const slaH = (o.due.getTime() - o.recv.getTime()) / 3_600_000
+  const cps = checkpoints(slaH, o.pr)
+  const elapsed = (now.getTime() - o.recv.getTime()) / 3_600_000
+  const left = (o.due.getTime() - now.getTime()) / 3_600_000
+  const rows = cps.map((cp) => {
+    const done = stageDone(o, cp.stage)
+    return { ...cp, done, behind: !done && elapsed > cp.dueAtH }
+  })
+  const needed = rows.filter((r) => !r.done).reduce((a, r) => a + r.budgetH, 0)
+  const short = needed - left
+  return {
+    rows,
+    behind: rows.some((r) => r.behind),
+    doomed: !o.done && short > 0,
+    short: Math.max(0, short),
+    behindAt: rows.find((r) => r.behind)?.stage ?? null,
+  }
+}
+
+export const atRisk = (o: Order, now: Date = NOW) => orderPlan(o, now).doomed
+
+export const selfReview = (stage: string, whoId: string, a: Record<string, string | null>) => {
+  const paired = PAIRS[stage]
+  return !!paired && a[paired] === whoId
+}

@@ -1,5 +1,5 @@
 {
-  "name": "title-crm",
+  "name": "titlekey",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -16,8 +16,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@tanstack/router-plugin": "^1.95.1",
-    "@types/node": "^26.1.2",
+    "@types/node": "^22.10.5",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "@vitejs/plugin-react": "^4.3.4",

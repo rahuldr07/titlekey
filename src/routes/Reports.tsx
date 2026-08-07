@@ -1,235 +1,225 @@
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { ASSIGN_STAGES, NOW, STAGES } from '@/data/seed'
-import { api, queryKeys } from '@/lib/api'
-import { hoursShort } from '@/lib/format'
+/**
+ * Reports — the original's six tabs exactly:
+ * Received · Assigned · Turnaround · By staff · By department · Quality
+ */
+import { useEffect, useState } from 'react'
+import { useSearch } from '@tanstack/react-router'
+import { ASSIGN_STAGES, AVAIL, NOW, ORDERS, STAFF, STAGES, who } from '@/data/seed'
+import { QCCRIT, QCRULES, QCSCALE } from '@/data/seed2'
+import { hh } from '@/lib/format'
 import { orderPlan } from '@/lib/sla'
-import { Kpi, Loading, PageHead, SectionHead } from '@/components/ui'
-import type { Order, Staff } from '@/data/types'
+import { useSession } from '@/lib/session'
+import { Assume, Banner, Chip, Kpi, PageHead, Sec } from '@/components/ui'
 
-const TABS = ['Received', 'Assigned', 'Turnaround', 'By staff', 'By department'] as const
-type Tab = (typeof TABS)[number]
+const RPTABS = ['Received', 'Assigned', 'Turnaround', 'By staff', 'By department', 'Quality'] as const
+type Tab = (typeof RPTABS)[number]
 
 export function Reports() {
-  const [tab, setTab] = useState<Tab>('Received')
-  const { data: orders } = useQuery({ queryKey: queryKeys.orders, queryFn: api.orders })
-  const { data: staff } = useQuery({ queryKey: queryKeys.staff, queryFn: api.staff })
-
-  if (!orders || !staff) return <Loading what="reports" />
+  const search = useSearch({ strict: false }) as { tab?: string }
+  const [tab, setTab] = useState<Tab>(
+    (RPTABS as readonly string[]).includes(search.tab ?? '') ? (search.tab as Tab) : 'Received',
+  )
+  useEffect(() => {
+    if (search.tab && (RPTABS as readonly string[]).includes(search.tab)) setTab(search.tab as Tab)
+  }, [search.tab])
+  const { toast } = useSession()
 
   return (
     <>
       <PageHead
         title="Reports"
         sub="What came in, who did it, and whether it went out on time."
-        actions={<button className="btn g">Export</button>}
+        actions={<button className="btn g" onClick={() => toast(`${tab.toLowerCase()} export built from the filtered rows`)}>Export</button>}
       />
-
       <div className="tabs">
-        {TABS.map((t) => (
+        {RPTABS.map((t) => (
           <button key={t} className={t === tab ? 'on' : ''} onClick={() => setTab(t)}>{t}</button>
         ))}
       </div>
-
-      {tab === 'Received' && <Received orders={orders} />}
-      {tab === 'Assigned' && <Assigned orders={orders} staff={staff} />}
-      {tab === 'Turnaround' && <Turnaround orders={orders} />}
-      {tab === 'By staff' && <ByStaff orders={orders} staff={staff} />}
-      {tab === 'By department' && <ByDepartment orders={orders} />}
+      {tab === 'Received' && <Received />}
+      {tab === 'Assigned' && <Assigned />}
+      {tab === 'Turnaround' && <Turnaround />}
+      {tab === 'By staff' && <ByStaff />}
+      {tab === 'By department' && <ByDepartment />}
+      {tab === 'Quality' && <Quality />}
     </>
   )
 }
 
-/* ── Received: what arrived, by client, and where it got to ── */
-function Received({ orders }: { orders: Order[] }) {
-  const clients = [...new Set(orders.map((o) => o.client))].sort()
-  const GRID = `130px 90px repeat(${STAGES.length}, minmax(80px,1fr)) 90px`
-
+/* ── Received — by client and stage, as a matrix ── */
+function Received() {
+  const clients = [...new Set(ORDERS.map((o) => o.cl))].sort()
   return (
     <>
       <div className="kpis">
-        <Kpi title="Received" icon="✉" value={orders.length} detail="in the period" />
-        <Kpi title="Delivered" icon="✓" value={orders.filter((o) => o.done).length}
-          detailTone="ok" detail="through every stage" />
-        <Kpi title="Still moving" icon="◷" value={orders.filter((o) => !o.done).length}
-          detailTone="warn" detail="somewhere in the pipeline" />
-        <Kpi title="Clients" icon="◎" value={clients.length} detail="sent work" />
+        <Kpi t="Received" icon="✉" v={ORDERS.length} d="in the period" />
+        <Kpi t="Delivered" icon="✓" v={ORDERS.filter((o) => o.done).length} dTone="ok" d="through every stage" />
+        <Kpi t="Still moving" icon="◷" v={ORDERS.filter((o) => !o.done).length} dTone="warn" d="somewhere in the pipeline" />
+        <Kpi t="Clients" icon="◎" v={clients.length} d="sent work" />
       </div>
-
-      <SectionHead>By client and stage</SectionHead>
-      <div className="tbl"><div className="tsc"><div style={{ minWidth: 900 }}>
-        <div className="trow h" style={{ gridTemplateColumns: GRID }}>
-          <span>Client</span><span>Received</span>
-          {STAGES.map((s) => <span key={s}>{s}</span>)}
-          <span>Delivered</span>
-        </div>
-        <div className="tb">
-          {clients.map((c) => {
-            const mine = orders.filter((o) => o.client === c)
-            return (
-              <div className="trow" key={c} style={{ gridTemplateColumns: GRID }}>
-                <div className="cell"><div className="v"><b>{c}</b></div></div>
-                <div className="cell"><div className="v mono">{mine.length}</div></div>
-                {STAGES.map((s) => (
-                  <div className="cell" key={s}>
-                    <div className="v mono">
-                      {mine.filter((o) => !o.done && !!o.assignments[s]).length || <span className="gr">·</span>}
-                    </div>
-                  </div>
-                ))}
-                <div className="cell">
-                  <div className="v mono ok">{mine.filter((o) => o.done).length}</div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </div></div></div>
+      <Sec>By client and stage</Sec>
+      <div className="tbl"><div className="tsc">
+        <table className="mat" style={{ minWidth: 860 }}>
+          <thead><tr>
+            <th>Client</th><th>Received</th>
+            {STAGES.map((s) => <th key={s}>{s}</th>)}
+            <th>Completed</th><th>WIP</th>
+          </tr></thead>
+          <tbody>
+            {clients.map((c) => {
+              const mine = ORDERS.filter((o) => o.cl === c)
+              const done = mine.filter((o) => o.done).length
+              return (
+                <tr key={c}>
+                  <td><b>{c}</b></td>
+                  <td className="n">{mine.length}</td>
+                  {STAGES.map((s) => (
+                    <td className="n" key={s}>
+                      {mine.filter((o) => !o.done && !!o.a[s]).length || '·'}
+                    </td>
+                  ))}
+                  <td className="n">{done}</td>
+                  <td className="n">{mine.length - done}</td>
+                </tr>
+              )
+            })}
+            <tr>
+              <td className="tot">Total</td>
+              <td className="tot">{ORDERS.length}</td>
+              {STAGES.map((s) => (
+                <td className="tot" key={s}>{ORDERS.filter((o) => !o.done && !!o.a[s]).length}</td>
+              ))}
+              <td className="tot">{ORDERS.filter((o) => o.done).length}</td>
+              <td className="tot">{ORDERS.filter((o) => !o.done).length}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div></div>
     </>
   )
 }
 
-/* ── Assigned: who is holding what, by department ── */
-function Assigned({ orders, staff }: { orders: Order[]; staff: Staff[] }) {
+/* ── Assigned — department × staff ── */
+function Assigned() {
   const GRID = '150px 190px 100px 1fr'
   return (
     <>
-      <SectionHead>Every stage with an owner</SectionHead>
+      <Sec>Every stage with an owner, by department and person</Sec>
       <div className="tbl"><div className="tsc"><div style={{ minWidth: 720 }}>
         <div className="trow h" style={{ gridTemplateColumns: GRID }}>
           <span>Department</span><span>Person</span><span>Holding</span><span>Against target</span>
         </div>
         <div className="tb">
           {ASSIGN_STAGES.flatMap((dept) =>
-            staff.filter((s) => s.departments.includes(dept)).map((s) => {
-              const held = orders.filter((o) => !o.done && o.assignments[dept] === s.id).length
-              const pct = Math.min(100, (s.open / s.capacity) * 100)
+            STAFF.filter((s) => s.dep.includes(dept)).map((s) => {
+              const held = ORDERS.filter((o) => !o.done && o.a[dept] === s.id).length
+              const pct = Math.min(100, (s.open / s.cap) * 100)
               return (
-                <div className="trow" key={`${dept}-${s.id}`} style={{ gridTemplateColumns: GRID }}>
+                <div className="trow" key={`${dept}-${s.id}`} style={{ gridTemplateColumns: GRID, cursor: 'default' }}>
                   <div className="cell"><div className="v">{dept}</div></div>
                   <div className="cell">
-                    <div className="v">{s.name}</div>
-                    {s.availability !== 'ok' && (
-                      <div className="s warn">{s.availability === 'leave' ? 'on leave' : 'off shift'}</div>
-                    )}
+                    <div className="v">{s.n}</div>
+                    {s.avail !== 'ok' && <div className="s warn">{AVAIL[s.avail]![0].toLowerCase()}</div>}
                   </div>
                   <div className="cell"><div className="v mono">{held}</div></div>
                   <div className="cell">
                     <div className="bar" style={{ maxWidth: 200 }}>
                       <i style={{ width: `${pct}%`, background: pct >= 100 ? 'var(--bad)' : 'var(--brand2)' }} />
                     </div>
-                    <div className="s">{s.open} of {s.capacity}</div>
+                    <div className="s">{s.open} of {s.cap}</div>
                   </div>
                 </div>
               )
-            }),
-          )}
+            }))}
         </div>
       </div></div></div>
     </>
   )
 }
 
-/* ── Turnaround: promise vs reality ── */
-function Turnaround({ orders }: { orders: Order[] }) {
-  const delivered = orders.filter((o) => o.done)
-  const live = orders.filter((o) => !o.done)
-  const atRiskCount = live.filter((o) => orderPlan(o).doomed).length
-  const behindCount = live.filter((o) => { const p = orderPlan(o); return p.behind && !p.doomed }).length
+/* ── Turnaround — promise vs reality, the flagship ── */
+function Turnaround() {
+  const live = ORDERS.filter((o) => !o.done)
+  const doomed = live.filter((o) => orderPlan(o).doomed).length
+  const behind = live.filter((o) => { const p = orderPlan(o); return p.behind && !p.doomed }).length
   const GRID = '140px 110px 100px 110px 130px 1fr'
-
   return (
     <>
       <div className="kpis">
-        <Kpi title="Delivered" icon="✓" value={delivered.length} detailTone="ok" detail="in the period" />
-        <Kpi title="Cannot finish" icon="⚑" value={atRiskCount}
-          tone={atRiskCount ? 'alert' : undefined} detailTone={atRiskCount ? 'bad' : 'ok'}
-          detail="need more time than is left" />
-        <Kpi title="Behind a checkpoint" icon="◷" value={behindCount}
-          tone={behindCount ? 'warnk' : undefined} detailTone="warn" detail="still recoverable" />
-        <Kpi title="On track" icon="◎" value={live.length - atRiskCount - behindCount}
-          detail="no intervention needed" />
+        <Kpi t="Delivered" icon="✓" v={ORDERS.filter((o) => o.done).length} dTone="ok" d="in the period" />
+        <Kpi t="Cannot finish" icon="⚑" v={doomed}
+          cls={doomed ? 'alert' : undefined} dTone={doomed ? 'bad' : 'ok'} d="need more time than is left" />
+        <Kpi t="Behind a checkpoint" icon="◷" v={behind}
+          cls={behind ? 'warnk' : undefined} dTone="warn" d="still recoverable" />
+        <Kpi t="On track" icon="◎" v={live.length - doomed - behind} d="no intervention needed" />
       </div>
-
-      <SectionHead>Live orders against their promise</SectionHead>
+      <Sec>Live orders against their promise</Sec>
       <div className="tbl"><div className="tsc"><div style={{ minWidth: 840 }}>
         <div className="trow h" style={{ gridTemplateColumns: GRID }}>
-          <span>Order</span><span>Client</span><span>Promise</span>
-          <span>Elapsed</span><span>Left</span><span>Status</span>
+          <span>Order</span><span>Client</span><span>Promise</span><span>Elapsed</span><span>Left</span><span>Status</span>
         </div>
         <div className="tb">
           {live.map((o) => {
-            const plan = orderPlan(o)
-            const elapsed = (NOW.getTime() - o.receivedAt.getTime()) / 3_600_000
-            const left = (o.dueAt.getTime() - NOW.getTime()) / 3_600_000
+            const p = orderPlan(o)
+            const slaH = (o.due.getTime() - o.recv.getTime()) / 3_600_000
+            const elapsed = (NOW.getTime() - o.recv.getTime()) / 3_600_000
+            const left = (o.due.getTime() - NOW.getTime()) / 3_600_000
             return (
-              <div className="trow" key={o.id} style={{ gridTemplateColumns: GRID }}>
-                <div className="cell"><div className="v mono">{o.id}</div>
-                  <div className="s">{o.product}</div></div>
-                <div className="cell"><div className="v">{o.client}</div></div>
-                <div className="cell"><div className="v mono">{o.promiseHours}h</div></div>
-                <div className="cell"><div className="v mono">{hoursShort(Math.max(0, elapsed))}</div></div>
+              <div className="trow" key={o.id} style={{ gridTemplateColumns: GRID, cursor: 'default' }}>
+                <div className="cell"><div className="v mono">{o.id}</div><div className="s">{o.pr}</div></div>
+                <div className="cell"><div className="v">{o.cl}</div></div>
+                <div className="cell"><div className="v mono">{Math.round(slaH)}h</div></div>
+                <div className="cell"><div className="v mono">{hh(Math.max(0, elapsed))}</div></div>
                 <div className="cell">
                   <div className={`v mono ${left < 0 ? 'bad' : left < 4 ? 'warn' : ''}`}>
-                    {left < 0 ? `${hoursShort(-left)} over` : hoursShort(left)}
+                    {left < 0 ? `${hh(-left)} over` : hh(left)}
                   </div>
                 </div>
                 <div className="cell">
-                  {plan.doomed ? (
-                    <div className="v bad" style={{ fontSize: '12.5px' }}>
-                      short {hoursShort(plan.shortHours)} for the stages left
-                    </div>
-                  ) : plan.behind ? (
-                    <div className="v warn" style={{ fontSize: '12.5px' }}>
-                      behind {plan.behindAt}
-                    </div>
-                  ) : (
-                    <div className="v ok" style={{ fontSize: '12.5px' }}>on track</div>
-                  )}
+                  {p.doomed
+                    ? <div className="v bad" style={{ fontSize: '12.5px' }}>short {hh(p.short)} for the stages left</div>
+                    : p.behind
+                      ? <div className="v warn" style={{ fontSize: '12.5px' }}>behind {p.behindAt}</div>
+                      : <div className="v ok" style={{ fontSize: '12.5px' }}>on track</div>}
                 </div>
               </div>
             )
           })}
         </div>
       </div></div></div>
-
-      <p className="gr" style={{ fontSize: '12.5px', marginTop: 12 }}>
-        "Cannot finish" is computed from the per-stage budgets, not from the due date
-        alone — an order can be well inside its promise and still unable to complete.
-        The budgets are a guess until measured; see <code>src/lib/sla.ts</code>.
-      </p>
+      <Assume title="The stage split is the designer's guess, not your data">
+        {' '}The 50/11/25/10/4 base shares (with 40Y and FS+ overrides) were picked from
+        how the work reads, not from timings. Take a week of finished orders and measure
+        how long each department actually held them — the median is your split.
+      </Assume>
     </>
   )
 }
 
 /* ── By staff ── */
-function ByStaff({ orders, staff }: { orders: Order[]; staff: Staff[] }) {
-  const roster = staff.filter((s) => s.departments.length > 0)
+function ByStaff() {
+  const roster = STAFF.filter((s) => s.dep.length > 0)
   const GRID = '190px 160px 100px 100px 1fr'
   return (
     <>
-      <SectionHead>Workload by person</SectionHead>
+      <Sec>Workload by person</Sec>
       <div className="tbl"><div className="tsc"><div style={{ minWidth: 760 }}>
         <div className="trow h" style={{ gridTemplateColumns: GRID }}>
           <span>Person</span><span>Departments</span><span>Open</span><span>Target</span><span>Load</span>
         </div>
         <div className="tb">
           {roster
-            .map((s) => ({
-              s,
-              held: orders.filter((o) => !o.done && Object.values(o.assignments).includes(s.id)).length,
-            }))
-            .sort((a, b) => b.held - a.held)
+            .map((s) => ({ s, held: ORDERS.filter((o) => !o.done && Object.values(o.a).includes(s.id)).length }))
+            .sort((a, b) => b.s.open - a.s.open)
             .map(({ s, held }) => {
-              const pct = Math.min(100, (s.open / s.capacity) * 100)
+              const pct = Math.min(100, (s.open / s.cap) * 100)
               return (
-                <div className="trow" key={s.id} style={{ gridTemplateColumns: GRID }}>
-                  <div className="cell"><div className="v">{s.name}</div>
-                    <div className="s">{held} order{held === 1 ? '' : 's'} in hand</div></div>
-                  <div className="cell"><div className="v gr" style={{ fontSize: '12.5px' }}>
-                    {s.departments.join(', ')}</div></div>
+                <div className="trow" key={s.id} style={{ gridTemplateColumns: GRID, cursor: 'default' }}>
+                  <div className="cell"><div className="v">{s.n}</div>
+                    <div className="s">{held} of today’s order{held === 1 ? '' : 's'} in hand</div></div>
+                  <div className="cell"><div className="v gr" style={{ fontSize: '12.5px' }}>{s.dep.join(', ')}</div></div>
                   <div className="cell"><div className="v mono">{s.open}</div></div>
-                  <div className="cell"><div className="v mono">{s.capacity}</div></div>
+                  <div className="cell"><div className="v mono">{s.cap}</div></div>
                   <div className="cell">
                     <div className="bar" style={{ maxWidth: 200 }}>
                       <i style={{ width: `${pct}%`, background: pct >= 100 ? 'var(--bad)' : 'var(--brand2)' }} />
@@ -246,35 +236,29 @@ function ByStaff({ orders, staff }: { orders: Order[]; staff: Staff[] }) {
 }
 
 /* ── By department ── */
-function ByDepartment({ orders }: { orders: Order[] }) {
+function ByDepartment() {
   const GRID = '160px 110px 110px 110px 1fr'
   return (
     <>
-      <SectionHead>Workload by department</SectionHead>
+      <Sec>Workload by department</Sec>
       <div className="tbl"><div className="tsc"><div style={{ minWidth: 720 }}>
         <div className="trow h" style={{ gridTemplateColumns: GRID }}>
-          <span>Department</span><span>Assigned</span><span>Unassigned</span>
-          <span>Delivered</span><span>Coverage</span>
+          <span>Department</span><span>Assigned</span><span>Unassigned</span><span>Delivered</span><span>Coverage</span>
         </div>
         <div className="tb">
           {STAGES.map((dept) => {
-            const live = orders.filter((o) => !o.done)
-            const assigned = live.filter((o) => !!o.assignments[dept]).length
-            const unassigned = live.length - assigned
-            const done = orders.filter((o) => o.done && !!o.assignments[dept]).length
+            const live = ORDERS.filter((o) => !o.done)
+            const assigned = live.filter((o) => !!o.a[dept]).length
+            const done = ORDERS.filter((o) => o.done && !!o.a[dept]).length
             const pct = live.length ? (assigned / live.length) * 100 : 0
             return (
-              <div className="trow" key={dept} style={{ gridTemplateColumns: GRID }}>
+              <div className="trow" key={dept} style={{ gridTemplateColumns: GRID, cursor: 'default' }}>
                 <div className="cell"><div className="v"><b>{dept}</b></div></div>
                 <div className="cell"><div className="v mono">{assigned}</div></div>
-                <div className="cell">
-                  <div className={`v mono ${unassigned ? 'warn' : ''}`}>{unassigned}</div>
-                </div>
+                <div className="cell"><div className={`v mono ${live.length - assigned ? 'warn' : ''}`}>{live.length - assigned}</div></div>
                 <div className="cell"><div className="v mono ok">{done}</div></div>
                 <div className="cell">
-                  <div className="bar" style={{ maxWidth: 200 }}>
-                    <i style={{ width: `${pct}%` }} />
-                  </div>
+                  <div className="bar" style={{ maxWidth: 200 }}><i style={{ width: `${pct}%` }} /></div>
                   <div className="s">{pct.toFixed(0)}% of live orders have an owner</div>
                 </div>
               </div>
@@ -282,6 +266,69 @@ function ByDepartment({ orders }: { orders: Order[] }) {
           })}
         </div>
       </div></div></div>
+    </>
+  )
+}
+
+/* ── Quality — the 1–5 scale, the criteria, and how scoring works ── */
+function Quality() {
+  const { toast } = useSession()
+  return (
+    <>
+      <Sec>The scale</Sec>
+      <div className="kpis">
+        {QCSCALE.map(([n, label, tone]) => (
+          <div className="kpi stat" key={n}>
+            <div className="t">{label}</div>
+            <div className="v">{n}</div>
+            <div className="d"><Chip tone={tone}>{label}</Chip></div>
+          </div>
+        ))}
+      </div>
+
+      <Sec>The criteria</Sec>
+      <div className="card"><div className="cb">
+        <div className="rows" style={{ border: 'none', borderRadius: 0 }}>
+          {QCCRIT.map(([n, d]) => (
+            <div className="rw" key={n}>
+              <span className="gr">·</span>
+              <span><b>{n}</b><div className="sd">{d}</div></span>
+              <span />
+            </div>
+          ))}
+        </div>
+      </div></div>
+
+      <Sec>How scoring works</Sec>
+      <div className="card"><div className="cb">
+        <div className="rows" style={{ border: 'none', borderRadius: 0 }}>
+          {QCRULES.map((r) => (
+            <div className="rw" key={r.k}>
+              <span className={r.on ? 'ok' : 'gr'}>{r.on ? '✓' : '·'}</span>
+              <span>
+                <b>{r.n}</b>
+                <div className="sd">{r.d}</div>
+                <div className="sd" style={{ color: 'var(--warn)' }}>{r.cost}</div>
+              </span>
+              <span>
+                <button className="btn g sm" onClick={() => toast('Rule edits live only in this session — nothing writes to a database yet')}>
+                  {r.on ? 'On' : 'Off'}
+                </button>
+              </span>
+            </div>
+          ))}
+        </div>
+        <p className="gr" style={{ fontSize: '12.5px', marginTop: 12 }}>
+          The self-review rule is why {who('sk')} — in both Typing and Typing QC — is
+          filtered out of QC on orders he typed, and why his avatar carries a red ring
+          on the Orders screen when both stages are his.
+        </p>
+      </div></div>
+
+      <Banner tone="b" icon="◔" title="Ratings happen on the order">
+        Open any order → Quality tab to rate the assigned staff on this scale. Defects
+        logged there are what this report aggregates.
+      </Banner>
     </>
   )
 }

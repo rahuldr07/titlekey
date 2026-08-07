@@ -1,57 +1,58 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { api, queryKeys } from '@/lib/api'
-import { LEAD_STATUS, STALE_BAD, STALE_WARN, daysSince, needsFollowUp } from '@/data/seed2'
+import { useNavigate, useParams } from '@tanstack/react-router'
+import { who } from '@/data/seed'
+import {
+  LEADS, LSTATUS, STALE_BAD, STALE_WARN, isStale, lastTouch, leadAge, needsFollowUp,
+} from '@/data/seed2'
 import { fmtDate } from '@/lib/format'
+import { useSession } from '@/lib/session'
 import { DataTable, type Row } from '@/components/DataTable'
-import { Banner, Chip, Kpi, Loading, PageHead, SectionHead } from '@/components/ui'
-import type { Lead } from '@/data/seed2'
+import { Banner, Chip, Empty, Kpi, PageHead, Sec } from '@/components/ui'
 
+/* ══════════ LEADS LIST ══════════ */
 export function Leads() {
-  const [selected, setSelected] = useState<Lead | null>(null)
-  const { data: leads, isLoading } = useQuery({ queryKey: queryKeys.leads, queryFn: api.leads })
+  const navigate = useNavigate()
+  const { toast } = useSession()
+  const [pill, setPill] = useState('all')
 
-  if (isLoading || !leads) return <Loading what="leads" />
+  const followUp = LEADS.filter(needsFollowUp)
+  const open = LEADS.filter((l) => !['won', 'lost'].includes(l.st))
 
-  const followUp = leads.filter(needsFollowUp)
-  const open = leads.filter((l) => l.status !== 'won' && l.status !== 'lost')
-  const won = leads.filter((l) => l.status === 'won')
-
-  const rows: Row<Lead>[] = leads.map((l) => {
-    const since = daysSince(l.lastContact)
-    const stale = since >= STALE_BAD ? 'bad' : since >= STALE_WARN ? 'warn' : null
+  const rows: Row[] = LEADS.map((l) => {
+    const age = leadAge(l)
+    const main = l.contacts.find((c) => c.main) ?? l.contacts[0]!
+    const [label, tone] = LSTATUS[l.st]!
     return {
       key: l.id,
-      buckets: [l.status, ...(needsFollowUp(l) ? ['followup'] : [])],
-      data: l,
-      onClick: () => setSelected(l),
+      k: [l.st, ...(needsFollowUp(l) ? ['followup'] : [])],
+      text: `${l.co} ${l.loc} ${main.n} ${main.e}`,
+      onClick: () => navigate({ to: '/leads/$leadId', params: { leadId: l.id } }),
       cells: [
-        <><div className="v"><b>{l.company}</b></div><div className="s">{l.contact}</div></>,
-        <div className="v">{l.state}</div>,
-        <Chip tone={LEAD_STATUS[l.status]![1] as 'b' | 'r' | 'v' | 'd'}>
-          {LEAD_STATUS[l.status]![0]}
-        </Chip>,
-        <div className="v mono">{l.volume}</div>,
+        <><div className="v"><b>{l.co}</b></div><div className="s">{l.loc}</div></>,
+        <><div className="v" style={{ fontSize: '12.5px' }}>{main.n}</div><div className="s">{main.role}</div></>,
+        <Chip tone={tone}>{label}</Chip>,
         <>
-          <div className="v mono">{fmtDate(l.lastContact)}</div>
-          <div className={`s ${stale === 'bad' ? 'bad' : ''}`}
-            style={stale === 'warn' ? { color: 'var(--warn)', fontWeight: 500 } : undefined}>
-            {since === 0 ? 'today' : `${since}d ago`}
+          <div className="v mono" style={{ fontSize: '12.5px' }}>{fmtDate(lastTouch(l))}</div>
+          <div className={`s ${age >= STALE_BAD ? 'bad' : ''}`}
+            style={age >= STALE_WARN && age < STALE_BAD ? { color: 'var(--warn)', fontWeight: 500 } : undefined}>
+            {age === 0 ? 'today' : `${age}d ago`}
           </div>
         </>,
-        <div className="v">{l.flagged ? <Chip tone="r">Flagged</Chip> : <span className="gr">—</span>}</div>,
+        <div className="v">{l.flag ? <Chip tone="r">Flagged</Chip> : <span className="gr">—</span>}</div>,
       ],
     }
   })
-
-  const countIn = (k: string) => rows.filter((r) => r.buckets.includes(k)).length
+  const countIn = (k: string) => rows.filter((r) => r.k.includes(k)).length
 
   return (
     <>
       <PageHead
         title="Leads"
-        sub="Prospects, and who has gone quiet."
-        actions={<button className="btn">＋ Add lead</button>}
+        sub="Free-form statuses, no enforced pipeline. A follow-up alert is raised by hand or derived from how long the lead has gone quiet."
+        actions={<>
+          <button className="btn g" onClick={() => toast('Importing a CSV needs a file picker and a column mapper')}>Import</button>
+          <button className="btn" onClick={() => navigate({ to: '/leads/new' })}>＋ Add lead</button>
+        </>}
       />
 
       {followUp.length > 0 && (
@@ -61,67 +62,172 @@ export function Leads() {
       )}
 
       <div className="kpis">
-        <Kpi title="Open" icon="◎" value={open.length} detail="still in play" />
-        <Kpi title="Need follow-up" icon="◷" value={followUp.length}
-          tone={followUp.length ? 'warnk' : undefined} detailTone="warn"
-          detail={`flagged or quiet ${STALE_WARN}d+`} />
-        <Kpi title="Won" icon="✓" value={won.length} detailTone="ok" detail="signed" />
-        <Kpi title="Lost" icon="·" value={leads.filter((l) => l.status === 'lost').length}
-          detail="worth revisiting later" />
+        <Kpi t="Open" icon="◎" v={open.length} d="still in play" />
+        <Kpi t="Need follow-up" icon="◷" v={followUp.length}
+          cls={followUp.length ? 'warnk' : undefined} dTone="warn" d={`flagged or quiet ${STALE_WARN}d+`} />
+        <Kpi t="Won" icon="✓" v={LEADS.filter((l) => l.st === 'won').length} dTone="ok" d="signed" />
+        <Kpi t="Lost / not now" icon="·"
+          v={LEADS.filter((l) => ['lost', 'notnow'].includes(l.st)).length} d="worth revisiting later" />
       </div>
 
       <DataTable
-        columns={[
-          { label: 'Company', width: 190, grow: 1.4 },
-          { label: 'State', width: 70 },
-          { label: 'Status', width: 110 },
-          { label: 'Volume', width: 100 },
-          { label: 'Last contact', width: 130 },
-          { label: 'Flag', width: 90 },
+        cols={[
+          { l: 'Company', w: 190, f: 1.4 }, { l: 'Contact', w: 160 }, { l: 'Status', w: 110 },
+          { l: 'Last contact', w: 130 }, { l: 'Flag', w: 90 },
         ]}
         rows={rows}
-        minWidth={860}
+        min={820}
         noun="leads"
-        searchPlaceholder="Search company or contact"
+        search="Search company or contact"
+        active={pill}
+        onPill={setPill}
         pills={[
           { key: 'all', label: 'All', count: rows.length },
           { key: 'followup', label: 'Need follow-up', count: countIn('followup'), urgent: true },
           { key: 'new', label: 'New', count: countIn('new') },
           { key: 'contacted', label: 'Contacted', count: countIn('contacted') },
-          { key: 'quoted', label: 'Quoted', count: countIn('quoted') },
+          { key: 'interested', label: 'Interested', count: countIn('interested') },
+          { key: 'notnow', label: 'Not now', count: countIn('notnow') },
           { key: 'won', label: 'Won', count: countIn('won') },
+          { key: 'lost', label: 'Lost', count: countIn('lost') },
         ]}
       />
+    </>
+  )
+}
 
-      {selected && (
-        <>
-          <SectionHead>{selected.company}</SectionHead>
+/* ══════════ LEAD DETAIL — contacts and the full note history ══════════ */
+export function LeadDetail() {
+  const { leadId } = useParams({ from: '/leads/$leadId' })
+  const navigate = useNavigate()
+  const { toast } = useSession()
+  const l = LEADS.find((x) => x.id === leadId)
+
+  if (!l) {
+    return (
+      <>
+        <PageHead title="That lead is not here" sub="It may have been removed, or the link may be out of date." />
+        <div className="card">
+          <Empty icon="·" action={<button className="btn sm" onClick={() => navigate({ to: '/leads' })}>Back to leads</button>}>
+            Nothing to show.
+          </Empty>
+        </div>
+      </>
+    )
+  }
+
+  const [label, tone] = LSTATUS[l.st]!
+  return (
+    <>
+      <button className="btn g sm" style={{ marginBottom: 14 }} onClick={() => navigate({ to: '/leads' })}>
+        ← Back to leads
+      </button>
+      <PageHead
+        title={l.co}
+        sub={l.loc}
+        actions={<>
+          <Chip tone={tone}>{label}</Chip>
+          {l.flag && <Chip tone="r">Flagged</Chip>}
+          <button className="btn g" onClick={() => toast(l.flag ? 'Flag cleared' : 'Flagged for follow-up')}>
+            {l.flag ? 'Clear flag' : 'Flag'}
+          </button>
+          <button className="btn" onClick={() => toast('Converting needs the client terms — not built yet')}>Convert to client</button>
+        </>}
+      />
+
+      {isStale(l) && (
+        <Banner tone="r" icon="◷" title={`No contact for ${leadAge(l)} days`}>
+          They have gone quiet. Worth one more attempt before writing it off.
+        </Banner>
+      )}
+
+      <div className="two">
+        <div>
           <div className="card">
-            <div className="ch">
-              <h2>{selected.company}</h2>
-              <div className="r">
-                <Chip tone={LEAD_STATUS[selected.status]![1] as 'b' | 'r' | 'v' | 'd'}>
-                  {LEAD_STATUS[selected.status]![0]}
-                </Chip>
-                <button className="btn g sm" onClick={() => setSelected(null)}>Close</button>
+            <div className="ch"><h2>Notes — newest first</h2></div>
+            <div className="cb">
+              <div className="fld" style={{ marginBottom: 14 }}>
+                <label htmlFor="lead-note">Add a note</label>
+                <textarea className="inp" id="lead-note" placeholder="What was said, and what happens next" />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+                <button className="btn sm" onClick={() => toast('Note added')}>Add note</button>
+              </div>
+              <div className="rows">
+                {[...l.notes].reverse().map((n, i) => (
+                  <div className="rw" key={i}>
+                    <span className="gr">·</span>
+                    <span>
+                      <div style={{ fontSize: '13.5px' }}>{n.t}</div>
+                      <div className="sd">{who(n.w)} · {fmtDate(n.at)}</div>
+                    </span>
+                    <span />
+                  </div>
+                ))}
               </div>
             </div>
-            <div className="cb">
-              <dl className="kv">
-                <dt>Contact</dt><dd>{selected.contact}</dd>
-                <dt>Email</dt><dd>{selected.email || <span className="gr">not given</span>}</dd>
-                <dt>Phone</dt><dd className="mono">{selected.phone || <span className="gr">not given</span>}</dd>
-                <dt>State</dt><dd>{selected.state}</dd>
-                <dt>Volume</dt><dd className="mono">{selected.volume}</dd>
-                <dt>Last contact</dt>
-                <dd className="mono">{fmtDate(selected.lastContact)} · {daysSince(selected.lastContact)}d ago</dd>
-              </dl>
-              <SectionHead>Note</SectionHead>
-              <p style={{ fontSize: '13.5px' }}>{selected.note}</p>
-            </div>
           </div>
-        </>
-      )}
+        </div>
+
+        <div className="card">
+          <div className="ch"><h2>Contacts</h2></div>
+          <div className="cb">
+            <div className="rows" style={{ border: 'none', borderRadius: 0 }}>
+              {l.contacts.map((c) => (
+                <div className="rw" key={c.n}>
+                  <span className={c.main ? 'br' : 'gr'}>{c.main ? '★' : '·'}</span>
+                  <span>
+                    <b>{c.n}</b>
+                    <div className="sd">{c.role}</div>
+                    <div className="sd">{c.e}{c.p ? ` · ${c.p}` : ''}</div>
+                  </span>
+                  <span />
+                </div>
+              ))}
+            </div>
+            <Sec>Owner</Sec>
+            <p style={{ fontSize: '13.5px' }}>{who(l.own)}</p>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
+/* ══════════ ADD LEAD ══════════ */
+export function NewLead() {
+  const navigate = useNavigate()
+  const { toast } = useSession()
+  return (
+    <>
+      <button className="btn g sm" style={{ marginBottom: 14 }} onClick={() => navigate({ to: '/leads' })}>
+        ← Back to leads
+      </button>
+      <PageHead title="Add a lead" sub="Only the company name is required." />
+      <div className="card"><div className="cb">
+        <div className="frm">
+          <div className="fld"><label htmlFor="nl-co">Company</label>
+            <input className="inp" id="nl-co" placeholder="Vanderbilt American Title" /></div>
+          <div className="fld"><label htmlFor="nl-loc">Location</label>
+            <input className="inp" id="nl-loc" placeholder="Houston, TX" /></div>
+          <div className="fld"><label htmlFor="nl-contact">Contact</label>
+            <input className="inp" id="nl-contact" placeholder="Dana Sterling" /></div>
+          <div className="fld"><label htmlFor="nl-role">Their role</label>
+            <input className="inp" id="nl-role" placeholder="Orders desk" /></div>
+          <div className="fld"><label htmlFor="nl-email">Email</label>
+            <input className="inp" id="nl-email" type="email" placeholder="orders@example.com" /></div>
+          <div className="fld"><label htmlFor="nl-phone">Phone</label>
+            <input className="inp mono" id="nl-phone" placeholder="(281) 555-0100" /></div>
+        </div>
+        <div className="fld" style={{ marginTop: 15 }}>
+          <label htmlFor="nl-note">First note</label>
+          <textarea className="inp" id="nl-note" placeholder="How they found us, what they need, what was agreed." />
+        </div>
+        <div style={{ display: 'flex', gap: 9, marginTop: 20 }}>
+          <button className="btn g" onClick={() => navigate({ to: '/leads' })}>Cancel</button>
+          <button className="btn" onClick={() => { toast('Lead added'); navigate({ to: '/leads' }) }}>Add the lead</button>
+        </div>
+      </div></div>
     </>
   )
 }

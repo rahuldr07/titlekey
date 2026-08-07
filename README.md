@@ -1,41 +1,32 @@
 # TitleKey
 
-Multi-tenant production system for title-abstract companies — a US title-search
-operation run by an India-based back office.
+Title CRM — a multi-tenant production system for title-abstract companies: a US
+title-search operation run by an India-based back office.
 
-Migrated from a self-contained HTML/CSS/JavaScript prototype to a modern React
-application, preserving all **39 screens**, the full design system, and the
-business logic.
+An **exact clone** of the original HTML/CSS/JS prototype, converted to a modern
+React stack. The technology changed; the application did not. All 39 screens,
+the full design system and the original's data and behaviour are preserved —
+see `PAGE_INVENTORY.md` and `MIGRATION_REPORT.md`.
 
 ## Technology Stack
 
 - **Vite** — build system and dev server
 - **React 19** — functional components throughout
-- **TypeScript** — `strict`, `noUncheckedIndexedAccess`, no `any`
-- **TanStack Router** — type-safe routing
-- **TanStack Query** — data fetching and caching
-
----
+- **TypeScript** — `strict`, no stray `any`
+- **TanStack Router** — all routing, fully typed
+- **TanStack Query** — data layer at the root, ready for a real API
 
 ## Project overview
 
-Title CRM runs a title-abstract production pipeline:
-
-```
-Search → Search QC → Typing → Typing QC → RTS        (+ Doc Req, on demand)
-```
-
-Orders arrive from clients with a turnaround promise. An assignment engine places
-each stage on the emptiest eligible person, subject to department membership,
-availability, daily capacity, and a **segregation-of-duties rule**: the same
-person may never both do and QC one order.
-
-The system tracks whether an order is on track, *behind an internal checkpoint*,
-or **unable to finish in time** — a distinction that surfaces before the order is
-actually late. Alongside it sits leads, invoicing, county-source monitoring,
-reporting, and a full HRMS module.
-
----
+Orders arrive from clients with a turnaround promise and flow through
+`Search → Search QC → Typing → Typing QC → RTS` (plus Doc Req on demand). An
+assignment engine places each stage on the emptiest eligible person — department
+membership, availability, daily target, route pools, and a segregation-of-duties
+rule: nobody QCs their own work. Stage budgets split each promise into internal
+checkpoints, so the system can say *behind* (recoverable) or *cannot finish in
+time* (needs intervention) before an order is actually late. Around the pipeline:
+leads, invoicing, county-source monitoring, six-tab reporting, and a full HRMS
+(attendance, leave, payroll, payslips, recruitment, petty cash).
 
 ## Installation
 
@@ -43,148 +34,71 @@ reporting, and a full HRMS module.
 npm install
 ```
 
-Works with `pnpm install` or `yarn` equally.
-
 ## Development
 
 ```bash
-npm run dev
+npm run dev        # http://localhost:5173
 ```
-
-Opens on <http://localhost:5173>.
 
 ## Production build
 
 ```bash
-npm run build      # tsc -b && vite build  →  dist/
-npm run preview    # serve the production build
-npm run typecheck  # tsc --noEmit
+npm run build      # tsc -b && vite build → dist/
+npm run preview
 ```
-
----
 
 ## Folder structure
 
 ```
-.
-├── index.html                    Vite entry
-├── vite.config.ts
-├── tsconfig.json
-├── PAGE_INVENTORY.md             Every screen in the ZIP → its React route
-├── MIGRATION_REPORT.md           Migration status and known issues
-├── src/
-│   ├── main.tsx                  QueryClient + Session + Router providers
-│   ├── router.tsx                All 39 routes, fully typed
-│   ├── styles/
-│   │   └── theme.css             Design tokens + every component style
-│   ├── data/
-│   │   ├── types.ts              Domain interfaces
-│   │   ├── seed.ts               Core: orders, staff, clients, products
-│   │   ├── seed2.ts              Leads, invoices, counties, links
-│   │   └── seed3.ts              HRMS, integrations, intake, report sections
-│   ├── lib/
-│   │   ├── api.ts                Data access — swap for real fetch calls
-│   │   ├── sla.ts                SLA decomposition and risk detection
-│   │   ├── format.ts             Dates, money, initials, due tone
-│   │   ├── nav.ts                Navigation model + permission filtering
-│   │   └── session.tsx           Signed-in user, tenant, theme
-│   ├── components/
-│   │   ├── Shell.tsx             Sidebar, header, layout
-│   │   ├── DataTable.tsx         Pills, filters, search, empty states
-│   │   └── ui.tsx                Kpi, Chip, Due, AvatarStack, Banner, PageHead
-│   └── routes/
-│       ├── Dashboard.tsx  Orders.tsx  OrderDetail.tsx  MyWork.tsx
-│       ├── Assignment.tsx  Leads.tsx  Billing.tsx  Counties.tsx
-│       ├── LinkMonitor.tsx  Reports.tsx  Company.tsx
-│       ├── hrms.tsx              Attendance, Leave, Payroll, Payslips, …
-│       └── misc.tsx              Intake, RepGen, SignIn, Person, …
-└── title-crm-897/                Original prototype — the specification
+index.html                    Vite entry — same fonts as the original
+src/
+  main.tsx                    QueryClient + Session + Router providers
+  router.tsx                  All 39 routes incl. the 8 alias redirects
+  styles/theme.css            The original's CSS, ported verbatim
+  data/
+    seed.ts                   Clock, tenants, departments, roles, staff (28), clients, orders
+    seed2.ts                  Leads, counties/links, SLA/tiers/clock/budget, invoices, QC, rules
+    seed3.ts                  HRMS — attendance, leave, payroll, petty, hiring, intake, repgen
+  lib/
+    session.tsx               Signed-in user, tenant, theme, drawer, toast
+    engine.ts                 The assignment pass with typed exceptions
+    sla.ts                    Checkpoints and behind/cannot-finish detection
+    nav.ts                    The original NAV + visibleNav() permission filter
+    format.ts                 Dates (MM/DD/YYYY policy), money, ₹, due tones
+  components/
+    Shell.tsx                 Sidebar, header, alerts + tenant modals, toast
+    DataTable.tsx             The original table(): pills, filters, search
+    Modal.tsx  ui.tsx         Modal, KPI, Chip, Due, AvatarStack, Assume, Stars
+  routes/                     One module per screen group
+title-crm-897/                Redacted reference copy of the original (committed)
+original-reference/           Untouched ZIP extraction (local only, gitignored)
 ```
-
-`original-reference/` (the untouched ZIP extraction) is kept locally and
-**gitignored** — it contains the unredacted demo data.
-
----
 
 ## Routing architecture
 
-TanStack Router, with the tree declared in `src/router.tsx`.
-
-**Routes are declared individually, never mapped over an array.** Mapping widens
-the path type and `navigate({ to: '/assign' })` silently stops type-checking.
-Declaring each one keeps every path a literal, so broken links fail at compile
-time. This caught two during the migration.
-
-Nested routes:
-
-```
-/orders            /orders/new           /orders/$orderId
-/leads             /leads/new            /leads/$leadId
-/payslips          /payslips/$staffId
-/company           /company/staff/$staffId    /company/clients/$clientName
-```
-
-**Alias routes.** The original resolved 8 old routes to a *tab* of another
-screen. That behaviour is preserved as redirects rather than the pages being
-dropped:
-
-| Alias | Redirects to |
-|---|---|
-| `/staff` `/clients` `/depts` `/roles` `/workflow` `/sla` | `/company` with the tab selected |
-| `/quality` `/workload` | `/reports` with the tab selected |
-
-Navigation is permission-filtered in `src/lib/nav.ts`, reproducing the original's
-special cases: leads and admins skip *My work*, only department members see
-*How I'm doing*, payroll staff skip *My payslips*.
-
----
+TanStack Router with every path declared as a literal (never mapped), so
+`navigate()` and `<Link>` are compile-time checked. Nested routes for
+`/orders/$orderId`, `/leads/$leadId`, `/payslips/$staffId`,
+`/company/staff/$staffId`, `/company/clients/$clientName`. The original's eight
+ALIAS routes (`/staff`, `/clients`, `/depts`, `/roles`, `/workflow`, `/sla`,
+`/quality`, `/workload`) redirect to the right tab of Company or Reports —
+exactly as the original's ALIAS map behaves. Direct URL entry, refresh, and
+active nav state all work.
 
 ## Query / data architecture
 
-`QueryClient` is created in `src/main.tsx` and provided at the root:
-
-```tsx
-<QueryClientProvider client={queryClient}>
-  <SessionProvider>
-    <RouterProvider router={router} />
-  </SessionProvider>
-</QueryClientProvider>
-```
-
-Every read goes through TanStack Query with a typed key from `queryKeys`:
-
-```ts
-const { data: orders, isLoading } = useQuery({
-  queryKey: queryKeys.orders,
-  queryFn: api.orders,
-})
-```
-
-`src/lib/api.ts` currently resolves from the seed modules with simulated latency,
-so loading states are real and get exercised. **Connecting a backend means
-replacing that one file** — no component changes.
-
-Defaults: `staleTime: 30s`, `refetchOnWindowFocus: false`, `retry: 1`. Live order
-state should not be trusted stale in an operations tool.
-
----
+`QueryClientProvider` wraps the app in `src/main.tsx`. Screens currently read
+the in-memory data ported from the original (so every page looks exactly like
+the prototype, per the clone requirement); the data modules are the single
+source, so pointing them at an API later is confined to one layer. Mock data was
+deliberately **not** removed — the original's fixed clock (Mon Aug 3 2026,
+5:30 PM ET) and every figure derive from it.
 
 ## Notes
 
-**The clock is fixed** at Mon 3 Aug 2026, 5:30 PM ET (`NOW` in `src/data/seed.ts`),
-as in the original. Every relative due date derives from it.
-
-**The SLA split is a guess.** The 50/11/25/10/4 per-stage shares are the original
-designer's estimate — "I picked these shares from how the work reads, not from
-timings." They live in `src/lib/sla.ts` as data with a `source` marker so a
-measured split can replace them. Do not hard-code them elsewhere.
-
-**Payroll figures are illustrative.** Carried across with the original's own
-warning. Confirm with whoever files your returns before anyone is paid on them.
-
-**Two deliberate deviations**, both accessibility fixes — sidebar group label
-contrast (3.31:1 → 5.27:1, WCAG 1.4.3) and `scroll-padding-top` so keyboard focus
-is not hidden behind the sticky header (WCAG 2.2 SC 2.4.11). Everything else
-matches the original's values exactly.
-
-See `MIGRATION_REPORT.md` for full status and known issues.
+- The reference copy in `title-crm-897/` and the seed data carry **redacted**
+  identity fields (`0000 0000 0000`-style placeholders) — this repository is
+  public. The untouched original stays local in `original-reference/`.
+- The original flags its own assumptions in-app (SLA hours, the stage split,
+  illustrative tax figures, the report generator). Those hatched-amber flags are
+  preserved, not resolved — they are part of the design.
