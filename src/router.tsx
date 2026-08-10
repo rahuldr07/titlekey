@@ -4,22 +4,45 @@
  * does. Routes are declared individually so every path stays a literal and
  * navigate()/<Link to> are type-checked.
  */
+import { lazy } from 'react'
 import { createRootRoute, createRoute, createRouter, Outlet, redirect } from '@tanstack/react-router'
 import { Shell } from '@/components/Shell'
 import { Dashboard } from '@/routes/Dashboard'
-import { Orders, OrderDetail, NewOrder } from '@/routes/Orders'
-import { Assignment } from '@/routes/Assignment'
-import { Leads, LeadDetail, NewLead } from '@/routes/Leads'
-import { Billing } from '@/routes/Billing'
-import { Reports } from '@/routes/Reports'
-import { Company, Person, ClientDetail } from '@/routes/Company'
-import { Counties, LinkMonitor } from '@/routes/Counties'
-import {
-  Attendance, Hiring, Leave, MyPay, Payroll, PayslipDetail, Payslips, Petty,
-} from '@/routes/hrms'
-import {
-  Denied, Intake, Integrations, MyPerf, MyWork, Onboard, RepGen, SignIn,
-} from '@/routes/misc'
+import { Denied } from '@/routes/Denied'
+
+/* Route-level code splitting. The shell, Dashboard and the not-found screen
+   stay in the entry chunk because they are on the critical path; everything
+   else is fetched on demand. defaultPreload: 'intent' warms a route's chunk on
+   hover, so navigation still feels instant while the first load ships less. */
+const Orders       = lazy(() => import('@/routes/Orders').then(m => ({ default: m.Orders })))
+const OrderDetail  = lazy(() => import('@/routes/Orders').then(m => ({ default: m.OrderDetail })))
+const NewOrder     = lazy(() => import('@/routes/Orders').then(m => ({ default: m.NewOrder })))
+const Assignment   = lazy(() => import('@/routes/Assignment').then(m => ({ default: m.Assignment })))
+const Leads        = lazy(() => import('@/routes/Leads').then(m => ({ default: m.Leads })))
+const LeadDetail   = lazy(() => import('@/routes/Leads').then(m => ({ default: m.LeadDetail })))
+const NewLead      = lazy(() => import('@/routes/Leads').then(m => ({ default: m.NewLead })))
+const Billing      = lazy(() => import('@/routes/Billing').then(m => ({ default: m.Billing })))
+const Reports      = lazy(() => import('@/routes/Reports').then(m => ({ default: m.Reports })))
+const Company      = lazy(() => import('@/routes/Company').then(m => ({ default: m.Company })))
+const Person       = lazy(() => import('@/routes/Company').then(m => ({ default: m.Person })))
+const ClientDetail = lazy(() => import('@/routes/Company').then(m => ({ default: m.ClientDetail })))
+const Counties     = lazy(() => import('@/routes/Counties').then(m => ({ default: m.Counties })))
+const LinkMonitor  = lazy(() => import('@/routes/Counties').then(m => ({ default: m.LinkMonitor })))
+const Attendance   = lazy(() => import('@/routes/hrms').then(m => ({ default: m.Attendance })))
+const Leave        = lazy(() => import('@/routes/hrms').then(m => ({ default: m.Leave })))
+const Payroll      = lazy(() => import('@/routes/hrms').then(m => ({ default: m.Payroll })))
+const Payslips     = lazy(() => import('@/routes/hrms').then(m => ({ default: m.Payslips })))
+const PayslipDetail= lazy(() => import('@/routes/hrms').then(m => ({ default: m.PayslipDetail })))
+const MyPay        = lazy(() => import('@/routes/hrms').then(m => ({ default: m.MyPay })))
+const Hiring       = lazy(() => import('@/routes/hrms').then(m => ({ default: m.Hiring })))
+const Petty        = lazy(() => import('@/routes/hrms').then(m => ({ default: m.Petty })))
+const MyWork       = lazy(() => import('@/routes/misc').then(m => ({ default: m.MyWork })))
+const MyPerf       = lazy(() => import('@/routes/misc').then(m => ({ default: m.MyPerf })))
+const Intake       = lazy(() => import('@/routes/misc').then(m => ({ default: m.Intake })))
+const RepGen       = lazy(() => import('@/routes/misc').then(m => ({ default: m.RepGen })))
+const Integrations = lazy(() => import('@/routes/misc').then(m => ({ default: m.Integrations })))
+const SignIn       = lazy(() => import('@/routes/misc').then(m => ({ default: m.SignIn })))
+const Onboard      = lazy(() => import('@/routes/misc').then(m => ({ default: m.Onboard })))
 
 const rootRoute = createRootRoute({
   component: () => <Shell />,

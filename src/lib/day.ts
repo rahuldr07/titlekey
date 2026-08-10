@@ -180,9 +180,15 @@ export function runDay(days: Day[]) {
   return { assigns, exc, load, fired, narrowed, today, deptOut, avoided, totalStages }
 }
 
-export const DAY = makeDay()
-export const RUN = runDay(DAY)
-export const BATCH = RUN.today
+/* Lazily computed and memoised. Building the five-day stream and running
+   the assignment pass over it is ~2,160 stage decisions; doing that at module
+   import blocked first paint for every visitor, including ones who never open
+   a screen that reads it. Screens that need it pay for it once, on first use. */
+let _day: Day[] | null = null
+let _run: ReturnType<typeof runDay> | null = null
+
+export const getDay = (): Day[] => (_day ??= makeDay())
+export const getRun = (): ReturnType<typeof runDay> => (_run ??= runDay(getDay()))
 
 /* ══════════ progress ══════════
    Stages complete in order, roughly one every 1.5h after the order arrives.
@@ -213,7 +219,7 @@ export const orderState = (o: DayOrder): 'complete' | 'waiting' | 'progress' => 
 export function staffWork() {
   const m: Record<string, { done: number; pend: number; tot: number; pct: number }> = {}
   STAFF.filter((s) => s.dep.length).forEach((s) => { m[s.id] = { done: 0, pend: 0, tot: 0, pct: 0 } })
-  RUN.assigns.filter((a) => a.today).forEach((a) => {
+  getRun().assigns.filter((a) => a.today).forEach((a) => {
     const r = m[a.who]; if (!r) return
     if (isDone(a.o, a.stage)) r.done++; else r.pend++
     r.tot++
@@ -223,17 +229,23 @@ export function staffWork() {
 }
 
 /** Every day in the stream with its order count — the Reports day picker. */
-export const DAY_SUMMARY = DAY.map((d, i) => ({
-  dk: d.dk,
-  date: d.date,
-  today: i === DAY.length - 1,
-  orders: d.arrivals.flatMap((s) => s.orders),
-}))
+export const daySummary = () => {
+  getRun()                                   // ensure assignments are populated
+  const days = getDay()
+  return days.map((d, i) => ({
+    dk: d.dk,
+    date: d.date,
+    today: i === days.length - 1,
+    orders: d.arrivals.flatMap((s) => s.orders),
+  }))
+}
 
-export const ordersFor = (dk: string | 'all') =>
-  dk === 'all'
-    ? DAY_SUMMARY.flatMap((d) => d.orders)
-    : (DAY_SUMMARY.find((d) => d.dk === dk)?.orders ?? [])
+export const ordersFor = (dk: string | 'all') => {
+  const summary = daySummary()
+  return dk === 'all'
+    ? summary.flatMap((d) => d.orders)
+    : (summary.find((d) => d.dk === dk)?.orders ?? [])
+}
 
 /** Stage totals for today's intake — how many sit in each stage right now. */
 export const stageTotals = (orders: DayOrder[]) => {

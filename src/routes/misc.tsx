@@ -8,7 +8,7 @@ import { orderPlan } from '@/lib/sla'
 import { useSession } from '@/lib/session'
 import { DataTable, type Row } from '@/components/DataTable'
 import { Assume, Banner, Chip, Due, Empty, Kpi, PageHead, Sec } from '@/components/ui'
-import { RUN, isDone } from '@/lib/day'
+import { getRun, isDone } from '@/lib/day'
 
 /* ══════════ MY WORK — what a staff member opens on ══════════ */
 export function MyWork() {
@@ -22,7 +22,7 @@ export function MyWork() {
 
   const late = mine.filter((m) => !m.o.done && m.o.due < NOW)
 
-  const myAssigns = RUN.assigns.filter((a) => a.today && a.who === me.id)
+  const myAssigns = getRun().assigns.filter((a) => a.today && a.who === me.id)
   const myDone = myAssigns.filter((a) => isDone(a.o, a.stage)).length
   const myTot = myAssigns.length
   const myPend = myTot - myDone
@@ -109,7 +109,7 @@ export function MyPerf() {
   const { me } = useSession()
   const peers = STAFF.filter((s) => s.dep.some((d) => me.dep.includes(d)) && s.id !== me.id)
   /* checks = QC passes over stages this person performed in the run */
-  const myAssigns = RUN.assigns.filter((a) => a.who === me.id)
+  const myAssigns = getRun().assigns.filter((a) => a.who === me.id)
   const checks = myAssigns.filter((a) => isDone(a.o, a.stage)).length
   const clean = Math.round(checks * 0.9)
   const budgetPct = myAssigns.length ? 92 : null
@@ -129,7 +129,7 @@ export function MyPerf() {
       <div className="card"><div className="cb">
         <div className="rows" style={{ border: 'none', borderRadius: 0 }}>
           {[me, ...peers].map((s) => {
-            const theirs = RUN.assigns.filter((a) => a.who === s.id)
+            const theirs = getRun().assigns.filter((a) => a.who === s.id)
             const load = s.cap ? Math.min(100, (s.open / s.cap) * 100) : 0
             return (
               <div className="rw" key={s.id}>
@@ -369,34 +369,6 @@ export function SignIn() {
   )
 }
 
-/* ══════════ DENIED ══════════ */
-export function Denied() {
-  const navigate = useNavigate()
-  const { me, can } = useSession()
-  return (
-    <>
-      <PageHead
-        title="You do not have access to that"
-        sub={`${roleName(me.r)} does not include the permission that screen needs.`}
-      />
-      <div className="card">
-        <Empty
-          icon="⚿"
-          action={
-            <div style={{ display: 'flex', gap: 9, justifyContent: 'center' }}>
-              <button className="btn g sm" onClick={() => navigate({ to: '/signin' })}>Switch account</button>
-              <button className="btn sm" onClick={() => navigate({ to: can('all') ? '/' : '/my-work' })}>
-                {can('all') ? 'Go to the dashboard' : 'Go to my work'}
-              </button>
-            </div>
-          }
-        >
-          Ask a company admin to change your role, or sign in as someone who has it.
-        </Empty>
-      </div>
-    </>
-  )
-}
 
 /* ══════════ ONBOARDING — set up a workspace ══════════ */
 export function Onboard() {

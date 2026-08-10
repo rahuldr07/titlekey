@@ -8,7 +8,7 @@ import { useSearch } from '@tanstack/react-router'
 import { ASSIGN_STAGES, AVAIL, CLIENTS, NOW, ORDERS, STAFF, STAGES, who } from '@/data/seed'
 import { QCCRIT, QCRULES, QCSCALE } from '@/data/seed2'
 import {
-  DAY_SUMMARY, RUN, curStage, isDone, ordersFor, staffWork, stageTotals,
+  daySummary, getRun, curStage, isDone, ordersFor, staffWork, stageTotals,
 } from '@/lib/day'
 import { hh } from '@/lib/format'
 import { orderPlan } from '@/lib/sla'
@@ -29,7 +29,7 @@ export function Reports() {
     if (search.tab && (RPTABS as readonly string[]).includes(search.tab)) setTab(search.tab as Tab)
   }, [search.tab])
 
-  const today = DAY_SUMMARY[DAY_SUMMARY.length - 1]!
+  const today = daySummary()[daySummary().length - 1]!
   const [day, setDay] = useState<string>(today.dk)
   const { toast } = useSession()
 
@@ -48,7 +48,7 @@ export function Reports() {
 
       {/* the day picker — every figure below follows it */}
       <div className="fbar">
-        {DAY_SUMMARY.map((d) => (
+        {daySummary().map((d) => (
           <button
             key={d.dk}
             className={`pill ${day === d.dk ? 'on' : ''}`}
@@ -64,8 +64,8 @@ export function Reports() {
           aria-pressed={day === 'all'}
           onClick={() => setDay('all')}
         >
-          All {DAY_SUMMARY.length} days
-          <span className="n">{DAY_SUMMARY.reduce((a, d) => a + d.orders.length, 0)}</span>
+          All {daySummary().length} days
+          <span className="n">{daySummary().reduce((a, d) => a + d.orders.length, 0)}</span>
         </button>
       </div>
 
@@ -150,7 +150,7 @@ function Received({ day }: { day: string }) {
 /* ── Assigned — department × person for the chosen day ── */
 function Assigned({ day }: { day: string }) {
   const GRID = '150px 190px 100px 100px 1fr'
-  const assigns = RUN.assigns.filter((a) => day === 'all' || a.dk === day)
+  const assigns = getRun().assigns.filter((a) => day === 'all' || a.dk === day)
   return (
     <>
       <Sec>Every stage with an owner — {assigns.length}</Sec>
@@ -163,7 +163,7 @@ function Assigned({ day }: { day: string }) {
             STAFF.filter((s) => s.dep.includes(dept)).map((s) => {
               const mine = assigns.filter((a) => a.stage === dept && a.who === s.id)
               const done = mine.filter((a) => isDone(a.o, a.stage)).length
-              const pct = Math.min(100, (RUN.load[s.id] ?? s.open) / s.cap * 100)
+              const pct = Math.min(100, (getRun().load[s.id] ?? s.open) / s.cap * 100)
               return (
                 <div className="trow" key={`${dept}-${s.id}`} style={{ gridTemplateColumns: GRID, cursor: 'default' }}>
                   <div className="cell"><div className="v">{dept}</div></div>
@@ -177,7 +177,7 @@ function Assigned({ day }: { day: string }) {
                     <div className="bar" style={{ maxWidth: 180 }}>
                       <i style={{ width: `${pct}%`, background: pct >= 100 ? 'var(--bad)' : 'var(--brand2)' }} />
                     </div>
-                    <div className="s">{RUN.load[s.id] ?? s.open} of {s.cap}</div>
+                    <div className="s">{getRun().load[s.id] ?? s.open} of {s.cap}</div>
                   </div>
                 </div>
               )
@@ -289,8 +289,8 @@ function ByStaff() {
 
 /* ── By department ── */
 function ByDepartment({ day }: { day: string }) {
-  const assigns = RUN.assigns.filter((a) => day === 'all' || a.dk === day)
-  const exc = RUN.exc.filter((e) => day === 'all' || e.dk === day)
+  const assigns = getRun().assigns.filter((a) => day === 'all' || a.dk === day)
+  const exc = getRun().exc.filter((e) => day === 'all' || e.dk === day)
   const GRID = '160px 100px 100px 110px 1fr'
   return (
     <>
@@ -373,7 +373,7 @@ function Quality() {
           ))}
         </div>
         <p className="gr" style={{ fontSize: '12.5px', marginTop: 12 }}>
-          The self-review rule removed somebody {RUN.avoided} times in this run — that is
+          The self-review rule removed somebody {getRun().avoided} times in this run — that is
           why {who('sk')}, who is in both Typing and Typing QC, is filtered out of QC on
           orders he typed.
         </p>

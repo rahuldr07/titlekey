@@ -6,7 +6,7 @@
 import { useState } from 'react'
 import { AVAIL, ASSIGN_STAGES, STAFF, who } from '@/data/seed'
 import { LEVELS, RULES } from '@/data/seed2'
-import { DAY_SUMMARY, RUN, isDone } from '@/lib/day'
+import { daySummary, getRun, isDone } from '@/lib/day'
 import { useSession } from '@/lib/session'
 import { Banner, Chip, Kpi, PageHead, Sec } from '@/components/ui'
 
@@ -28,10 +28,11 @@ export function Assignment() {
   const [tab, setTab] = useState<Tab>('Live')
   const { toast } = useSession()
 
-  const today = DAY_SUMMARY[DAY_SUMMARY.length - 1]!
+  const days = daySummary()
+  const today = days[days.length - 1]!
   const arrived = today.orders
-  const placed = RUN.assigns.filter((a) => a.today)
-  const exc = RUN.exc.filter((e) => e.today)
+  const placed = getRun().assigns.filter((a) => a.today)
+  const exc = getRun().exc.filter((e) => e.today)
   const totalStages = arrived.length * ASSIGN_STAGES.length
   const hours = [...new Set(arrived.map((o) => o.hr))].sort((a, b) => a - b)
 
@@ -52,7 +53,7 @@ export function Assignment() {
         <Kpi t="Exceptions" v={exc.length}
           cls={exc.length ? 'alert' : undefined} dTone={exc.length ? 'bad' : 'ok'}
           d="waiting on a person" onClick={() => setTab('Exceptions')} />
-        <Kpi t="Self-review avoided" v={RUN.avoided} d="rule working silently" />
+        <Kpi t="Self-review avoided" v={getRun().avoided} d="rule working silently" />
       </div>
 
       <div className="tabs">
@@ -76,7 +77,8 @@ const LIVE_GRID = `140px 80px 100px 70px repeat(${ASSIGN_STAGES.length}, minmax(
 
 /* ── Live — arrivals by hour, then the most recent orders and who got each stage ── */
 function Live() {
-  const today = DAY_SUMMARY[DAY_SUMMARY.length - 1]!
+  const days = daySummary()
+  const today = days[days.length - 1]!
   const [hour, setHour] = useState<number | null>(null)
   const byHour = today.orders.reduce<Record<number, number>>((m, o) => {
     m[o.hr] = (m[o.hr] ?? 0) + 1
@@ -138,7 +140,7 @@ const EX_GRID = '160px 140px 130px 90px 1fr'
 
 /* ── Exceptions — grouped by why, because each cause has a different fix ── */
 function Exceptions() {
-  const exc = RUN.exc.filter((e) => e.today)
+  const exc = getRun().exc.filter((e) => e.today)
   const byCause = exc.reduce<Record<string, typeof exc>>((acc, e) => {
     ;(acc[e.why] ??= []).push(e)
     return acc
@@ -191,14 +193,14 @@ function Exceptions() {
 /* ── Capacity — where everyone stands against their own target ── */
 function Capacity() {
   const roster = STAFF.filter((s) => s.dep.length > 0)
-  const placed = RUN.assigns.filter((a) => a.today)
+  const placed = getRun().assigns.filter((a) => a.today)
   return (
     <>
       <Sec>Where everyone stands</Sec>
       <div className="card"><div className="cb">
         <div className="rows" style={{ border: 'none', borderRadius: 0 }}>
           {roster.map((s) => {
-            const used = RUN.load[s.id] ?? s.open
+            const used = getRun().load[s.id] ?? s.open
             const mine = placed.filter((a) => a.who === s.id)
             const done = mine.filter((a) => isDone(a.o, a.stage)).length
             const pct = Math.min(100, (used / s.cap) * 100)
@@ -244,7 +246,7 @@ function Rules() {
               </span>
               <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 <span className="mono gr" style={{ fontSize: '11.5px' }}>
-                  {RUN.fired[r.id] ?? 0} checks
+                  {getRun().fired[r.id] ?? 0} checks
                 </span>
                 <Chip tone={r.k === 'block' ? 'd' : r.k === 'route' ? 'b' : r.k === 'cover' ? 'r' : 'v'}>{r.k}</Chip>
                 {r.lock && <span className="gr" style={{ fontSize: '11.5px' }}>locked</span>}
@@ -255,7 +257,7 @@ function Rules() {
         <p className="gr" style={{ fontSize: '12.5px', marginTop: 12 }}>
           A rule checked thousands of times that never removed anybody is doing nothing,
           and the count on its own hides that — the self-review rule narrowed the pool{' '}
-          <b>{RUN.avoided}</b> times in this run.
+          <b>{getRun().avoided}</b> times in this run.
           {' '}A dated change log needs somewhere to store it; nothing here writes to a
           database yet, so edits live only in this session.
         </p>

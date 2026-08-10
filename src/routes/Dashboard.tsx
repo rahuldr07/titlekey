@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { NOW, ORDERS, PASTDUE, STAGES, STATUS, TZ, st, stColor } from '@/data/seed'
-import { RUN, curStage } from '@/lib/day'
+import { getRun, curStage } from '@/lib/day'
 import { fmtDate } from '@/lib/format'
 import { atRisk, orderPlan } from '@/lib/sla'
 import { useSession } from '@/lib/session'
@@ -28,8 +28,8 @@ export function Dashboard() {
   for (const o of ORDERS) counts[o.stt] = (counts[o.stt] ?? 0) + 1
 
   const shown = pipe ? ORDERS.filter((o) => o.stt === pipe) : ORDERS.filter((o) => !o.done && o.due < NOW)
-  const todayOrders = RUN.today
-  const excToday = RUN.exc.filter((e) => e.today)
+  const todayOrders = getRun().today
+  const excToday = getRun().exc.filter((e) => e.today)
   /* The original counts ORDERS that cleared every department, not stage-assignments:
      delivered = no stage left unassigned; still moving = at least one outstanding. */
   const deliveredToday = todayOrders.filter((o) => !curStage(o))
