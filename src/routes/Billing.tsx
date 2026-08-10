@@ -51,7 +51,7 @@ export function Billing() {
     <>
       <PageHead
         title="Invoicing"
-        sub="What has been billed, and what is still owed."
+        sub="Raised when an order is delivered. Every figure below follows the filters."
         actions={<button className="btn g" onClick={() => toast(`invoices export — ${base.length} rows`)}>Export</button>}
       />
 
@@ -62,15 +62,54 @@ export function Billing() {
       )}
 
       <div className="kpis">
-        <Kpi t="Outstanding" icon="$" v={money(outstanding)}
-          cls={outstanding > 0 ? 'warnk' : undefined} dTone="warn" d="not yet collected" />
-        <Kpi t="Overdue" icon="▲" v={money(overdueTotal)}
+        <Kpi t="Invoiced" v={money(invoiced)}
+          d={`${base.length} invoices · ${cf === 'all' && mf === 'all' ? 'everything' : 'filtered'}`} />
+        <Kpi t="Paid" v={money(collected)} dTone="ok"
+          d={invoiced ? `${Math.round((collected / invoiced) * 100)}% collected` : '—'} />
+        <Kpi t="Outstanding" v={money(outstanding)}
+          cls={outstanding > 0 ? 'warnk' : undefined} dTone="warn" d="still to collect" />
+        <Kpi t="Overdue" v={money(overdueTotal)}
           cls={overdueTotal > 0 ? 'alert' : undefined} dTone={overdueTotal > 0 ? 'bad' : 'ok'}
           d={`${overdue.length} invoice${overdue.length === 1 ? '' : 's'}`} />
-        <Kpi t="Invoiced" icon="▤" v={money(invoiced)} d="in the range" />
-        <Kpi t="Collected" icon="✓" v={money(collected)} dTone="ok"
-          d={invoiced ? `${((collected / invoiced) * 100).toFixed(0)}% of invoiced` : '—'} />
       </div>
+
+      <Sec>By client and month — click any figure to filter to it</Sec>
+      <div className="tbl"><div className="tsc">
+        <table className="mat" style={{ minWidth: 820 }}>
+          <thead><tr>
+            <th>Client</th>{MONTHS.map((m) => <th key={m}>{m}</th>)}<th>Total</th>
+          </tr></thead>
+          <tbody>
+            {CLIENTS.filter((c) => c.total > 0).map((c) => (
+              <tr key={c.n} className="clk">
+                <td><b>{c.n}</b></td>
+                {MONTHS.map((m) => {
+                  const cell = INVOICES.filter((i) => i.cl === c.n && i.m === m)
+                    .reduce((a, i) => a + i.amt, 0)
+                  return (
+                    <td className="n" key={m}
+                      onClick={() => { setCf(c.n); setMf(m) }}>
+                      {cell ? money(r2(cell)) : <span className="gr">·</span>}
+                    </td>
+                  )
+                })}
+                <td className="tot">{money(c.total)}</td>
+              </tr>
+            ))}
+            <tr>
+              <td className="tot">Total</td>
+              {MONTHS.map((m) => (
+                <td className="tot" key={m}>
+                  {money(r2(INVOICES.filter((i) => i.m === m).reduce((a, i) => a + i.amt, 0)))}
+                </td>
+              ))}
+              <td className="tot">{money(r2(INVOICES.reduce((a, i) => a + i.amt, 0)))}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div></div>
+
+      <Sec>All invoices</Sec>
 
       <DataTable
         cols={[
@@ -100,31 +139,6 @@ export function Billing() {
         ]}
       />
 
-      <Sec>By client</Sec>
-      <div className="card"><div className="cb">
-        <div className="rows" style={{ border: 'none', borderRadius: 0 }}>
-          {CLIENTS.map((c) => {
-            const owed = r2(c.total - c.paid)
-            const pct = c.total ? (c.paid / c.total) * 100 : 0
-            return (
-              <div className="rw" key={c.n}>
-                <span className={owed > 0 ? 'warn' : 'ok'}>{owed > 0 ? '◷' : '✓'}</span>
-                <span>
-                  <b>{c.n}</b>
-                  <div className="sd">{c.orders} orders · {c.terms}</div>
-                  <div className="bar" style={{ marginTop: 6, maxWidth: 280 }}>
-                    <i style={{ width: `${pct}%`, background: 'var(--ok)' }} />
-                  </div>
-                </span>
-                <span style={{ textAlign: 'right' }}>
-                  <div className="mono" style={{ fontSize: '13.5px' }}>{money(owed)}</div>
-                  <div className="s gr">of {money(c.total)}</div>
-                </span>
-              </div>
-            )
-          })}
-        </div>
-      </div></div>
     </>
   )
 }

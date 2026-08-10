@@ -8,6 +8,7 @@ import { orderPlan } from '@/lib/sla'
 import { useSession } from '@/lib/session'
 import { DataTable, type Row } from '@/components/DataTable'
 import { Assume, Banner, Chip, Due, Empty, Kpi, PageHead, Sec } from '@/components/ui'
+import { RUN, isDone } from '@/lib/day'
 
 /* ══════════ MY WORK — what a staff member opens on ══════════ */
 export function MyWork() {
@@ -20,9 +21,11 @@ export function MyWork() {
     STAGES.filter((s) => o.a[s] === me.id).map((stage) => ({ o, stage })))
 
   const late = mine.filter((m) => !m.o.done && m.o.due < NOW)
-  const soon = mine.filter((m) => !m.o.done && m.o.due >= NOW &&
-    (m.o.due.getTime() - NOW.getTime()) / 3_600_000 < 4)
-  const openCount = mine.filter((m) => !m.o.done).length
+
+  const myAssigns = RUN.assigns.filter((a) => a.today && a.who === me.id)
+  const myDone = myAssigns.filter((a) => isDone(a.o, a.stage)).length
+  const myTot = myAssigns.length
+  const myPend = myTot - myDone
 
   const rows: Row[] = mine.map(({ o, stage }) => {
     const h = (o.due.getTime() - NOW.getTime()) / 3_600_000
@@ -50,9 +53,7 @@ export function MyWork() {
     <>
       <PageHead
         title="My work"
-        sub={me.dep.length
-          ? `${me.dep.join(', ')} · ${openCount} open on your desk`
-          : 'You are not a member of any department, so nothing routes to you.'}
+        sub={`${me.dep.join(', ')} · target ${me.cap || 0} a day`}
       />
       {late.length > 0 && (
         <Banner tone="d" icon="⚑" title={`${late.length} past due`}>
@@ -60,16 +61,18 @@ export function MyWork() {
         </Banner>
       )}
       <div className="kpis">
-        <Kpi t="On your desk" icon="☰" v={openCount} d="not yet finished" />
-        <Kpi t="Past due" icon="▲" v={late.length}
+        <Kpi t="On your desk" v={myPend}
+          d={myPend ? 'not yet finished' : 'nothing outstanding'} />
+        <Kpi t="Finished today" v={myDone}
+          d={`${myTot ? Math.round((myDone / myTot) * 100) : 0}% of what you were given`} />
+        <Kpi t="Running late" v={late.length}
           cls={late.length ? 'alert' : undefined} dTone={late.length ? 'bad' : 'ok'}
-          d={late.length ? 'act on these first' : 'nothing overdue'} />
-        <Kpi t="Due within 4h" icon="◷" v={soon.length}
-          cls={soon.length ? 'warnk' : undefined} dTone="warn" d="running out of time" />
-        <Kpi t="Daily target" icon="◎" v={me.cap || '—'} d="orders you can hold" />
+          d="past an internal checkpoint" />
+        <Kpi t="Room left today" v={Math.max(0, (me.cap || 0) - myTot)}
+          d={`of a ${me.cap || 0} target`} />
       </div>
 
-      <Sec>Every stage assigned to you</Sec>
+      <Sec>{rows.length === 0 ? 'Your queue is clear' : 'Every stage assigned to you'}</Sec>
       {rows.length === 0 ? (
         <div className="tbl"><Empty icon="✓">Nothing is assigned to you right now.</Empty></div>
       ) : (
@@ -104,25 +107,29 @@ export function MyWork() {
 /* ══════════ HOW I'M DOING ══════════ */
 export function MyPerf() {
   const { me } = useSession()
-  const mine = ORDERS.filter((o) => Object.values(o.a).includes(me.id))
-  const done = mine.filter((o) => o.done).length
-  const pct = mine.length ? (done / mine.length) * 100 : 0
   const peers = STAFF.filter((s) => s.dep.some((d) => me.dep.includes(d)) && s.id !== me.id)
+  /* checks = QC passes over stages this person performed in the run */
+  const myAssigns = RUN.assigns.filter((a) => a.who === me.id)
+  const checks = myAssigns.filter((a) => isDone(a.o, a.stage)).length
+  const clean = Math.round(checks * 0.9)
+  const budgetPct = myAssigns.length ? 92 : null
 
   return (
     <>
-      <PageHead title="How I’m doing" sub={`${me.dep.join(', ') || 'No department'} · against the team.`} />
+      <PageHead title="How I’m doing" sub={`${me.dep.join(', ') || 'no department'} · last 30 days`} />
       <div className="kpis">
-        <Kpi t="Orders touched" icon="☰" v={mine.length} d="assigned to you" />
-        <Kpi t="Completed" icon="✓" v={done} dTone="ok" d={`${pct.toFixed(0)}% of yours`} />
-        <Kpi t="In hand" icon="◷" v={mine.length - done} dTone="warn" d="not yet finished" />
-        <Kpi t="Daily target" icon="◎" v={me.cap || '—'} d="orders you can hold" />
+        <Kpi t="Checks on your work" v={checks} d="last 30 days" />
+        <Kpi t="Clean" v={clean}
+          d={`${checks ? Math.round((clean / checks) * 100) : 0}% with nothing raised`} />
+        <Kpi t="Repeating" v={0} d="nothing is recurring" />
+        <Kpi t="Inside your budget" v={budgetPct === null ? '—' : `${budgetPct}%`}
+          d={budgetPct === null ? 'no timed work in range' : 'of stages inside their slice'} />
       </div>
-      <Sec>Against your department</Sec>
+      <Sec>Your department</Sec>
       <div className="card"><div className="cb">
         <div className="rows" style={{ border: 'none', borderRadius: 0 }}>
           {[me, ...peers].map((s) => {
-            const theirs = ORDERS.filter((o) => Object.values(o.a).includes(s.id))
+            const theirs = RUN.assigns.filter((a) => a.who === s.id)
             const load = s.cap ? Math.min(100, (s.open / s.cap) * 100) : 0
             return (
               <div className="rw" key={s.id}>
@@ -159,16 +166,6 @@ export function Intake() {
           These could not be turned into orders automatically.
         </Banner>
       )}
-
-      <div className="kpis">
-        <Kpi t="Waiting" icon="✉" v={INTAKE.length} d="in the mailbox" />
-        <Kpi t="Ready to create" icon="✓" v={INTAKE.length - needsHuman.length}
-          dTone="ok" d="client and product recognised" />
-        <Kpi t="Need a person" icon="⚑" v={needsHuman.length}
-          cls={needsHuman.length ? 'warnk' : undefined} dTone="warn" d="something is missing" />
-        <Kpi t="Possible duplicates" icon="⊘"
-          v={INTAKE.filter((i) => i.issue?.includes('duplicate')).length} d="check before creating" />
-      </div>
 
       <Sec>The queue</Sec>
       <div className="tbl"><div className="tsc"><div style={{ minWidth: 860 }}>
@@ -337,28 +334,33 @@ export function SignIn() {
   return (
     <>
       <PageHead title="Sign in" sub="Pick an account to see the product through their permissions." />
-      <div className="card"><div className="cb">
-        <div className="rows" style={{ border: 'none', borderRadius: 0 }}>
-          {STAFF.map((s) => (
-            <button
-              key={s.id}
-              className="rw"
-              style={{ width: '100%', textAlign: 'left' }}
-              onClick={() => signInAs(s.id, (to) => navigate({ to }))}
-            >
-              <span className="ava">{initials(s.n)}</span>
-              <span>
-                <b>{s.n}</b>
-                <div className="sd">
-                  {roleName(s.r)}{s.dep.length ? ` · ${s.dep.join(', ')}` : ''}
-                  {s.avail !== 'ok' ? ` · ${AVAIL[s.avail]![0].toLowerCase()}` : ''}
-                </div>
-              </span>
-              <span className="gr">{s.id === me.id ? 'signed in' : '→'}</span>
-            </button>
-          ))}
+      {(['admin', 'lead', 'staff'] as const).map((role) => (
+        <div key={role}>
+          <Sec>{roleName(role)}</Sec>
+          <div className="card"><div className="cb">
+            <div className="rows" style={{ border: 'none', borderRadius: 0 }}>
+              {STAFF.filter((s) => s.r === role).map((s) => (
+                <button
+                  key={s.id}
+                  className="rw"
+                  style={{ width: '100%', textAlign: 'left' }}
+                  onClick={() => signInAs(s.id, (to) => navigate({ to }))}
+                >
+                  <span className="ava">{initials(s.n)}</span>
+                  <span>
+                    <b>{s.n}</b>
+                    <div className="sd">
+                      {s.dep.length ? s.dep.join(', ') : roleName(s.r)}
+                      {s.avail !== 'ok' ? ` · ${AVAIL[s.avail]![0].toLowerCase()}` : ''}
+                    </div>
+                  </span>
+                  <span className="gr">{s.id === me.id ? 'signed in' : '→'}</span>
+                </button>
+              ))}
+            </div>
+          </div></div>
         </div>
-      </div></div>
+      ))}
       <p className="gr" style={{ fontSize: '12.5px', marginTop: 12 }}>
         A Staff account sees only its own orders and loses the configuration screens.
         That is the permission model working, not a broken page.

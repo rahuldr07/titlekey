@@ -10,11 +10,8 @@ import { Banner, Chip, Kpi, PageHead, Sec } from '@/components/ui'
 
 /* ══════════ COUNTY COVERAGE ══════════ */
 export function Counties() {
-  const { toast } = useSession()
-  const states = [...new Set(COUNTIES.map((c) => c.st))].sort()
+  const { toast, tenant } = useSession()
   const totalLinks = COUNTIES.length * LINKTYPES.length
-  const working = COUNTIES.reduce(
-    (a, c) => a + LINKTYPES.filter((t) => c.links[t.k]?.s === 'ok').length, 0)
   const none = COUNTIES.reduce(
     (a, c) => a + LINKTYPES.filter((t) => (c.links[t.k]?.s ?? 'none') === 'none').length, 0)
   const broken = brokenLinks().length
@@ -24,7 +21,7 @@ export function Counties() {
     <>
       <PageHead
         title="County coverage"
-        sub={`${COUNTIES.length} counties across ${states.length} states, and where their records come from.`}
+        sub={`Your own county record — ${tenant.name} maintains this, and nobody else can see or change it.`}
         actions={<>
           <button className="btn g" onClick={() => toast('Importing a CSV needs a file picker and a column mapper')}>Import CSV</button>
           <button className="btn g" onClick={() => toast(`county-coverage export — ${COUNTIES.length} rows`)}>Export</button>
@@ -33,12 +30,12 @@ export function Counties() {
       />
 
       <div className="kpis">
-        <Kpi t="Counties" icon="◈" v={COUNTIES.length} d={states.join(' · ')} />
-        <Kpi t="Links working" icon="✓" v={working} dTone="ok" d={`of ${totalLinks} possible`} />
-        <Kpi t="Not working" icon="⚑" v={broken}
-          cls={broken ? 'alert' : undefined} dTone={broken ? 'bad' : 'ok'}
-          d="broken, moved, slow or needing a login" />
-        <Kpi t="No link on file" icon="·" v={none} d="searched another way" />
+        <Kpi t="Counties on file" v={COUNTIES.length} d="across every state we search" />
+        <Kpi t="Links held" v={`${totalLinks - none} / ${totalLinks}`}
+          d={`${LINKTYPES.length} per county`} />
+        <Kpi t="Not working" v={broken}
+          cls={broken ? 'alert' : undefined} dTone={broken ? 'bad' : 'ok'} d="needs attention" />
+        <Kpi t="Missing" v={none} d="no address on file" />
       </div>
 
       <Sec>Coverage by county — index year and the four record sources</Sec>
@@ -82,6 +79,9 @@ export function LinkMonitor() {
   const { toast } = useSession()
   const problems = brokenLinks()
   const by = (s: string) => problems.filter((p) => p.l.s === s)
+  const total = COUNTIES.length * LINKTYPES.length
+  const held = COUNTIES.reduce((a, c) => a + LINKTYPES.filter((t) => (c.links[t.k]?.u ?? '') !== '').length, 0)
+  const working = COUNTIES.reduce((a, c) => a + LINKTYPES.filter((t) => c.links[t.k]?.s === 'ok').length, 0)
   const due = NOW >= nextCheck()
   const GRID = '150px 60px 110px 130px 1fr 1fr'
 
@@ -89,7 +89,7 @@ export function LinkMonitor() {
     <>
       <PageHead
         title="Link monitor"
-        sub={`Four links per county. A checker runs every ${LINKCHECK.every} days and reports anything that stopped working.`}
+        sub={`Every county link is checked every ${LINKCHECK.every} days. Anything that stops working is reported here.`}
         actions={<button className="btn" onClick={() => toast('Checking every link — anything that stopped working lands here')}>Run the check now</button>}
       />
 
@@ -107,15 +107,17 @@ export function LinkMonitor() {
       )}
 
       <div className="kpis">
-        <Kpi t="Not working" icon="⚑" v={by('broken').length}
-          cls={by('broken').length ? 'alert' : undefined}
-          dTone={by('broken').length ? 'bad' : 'ok'} d="dead links" />
-        <Kpi t="Moved" icon="→" v={by('moved').length} dTone="warn" d="redirecting elsewhere" />
-        <Kpi t="Login required" icon="⚿" v={by('auth').length} dTone="warn" d="now asks for credentials" />
-        <Kpi t="Slow" icon="◷" v={by('slow').length} dTone="warn" d="usable but painful" />
+        <Kpi t="Links on file" v={held}
+          d={`of ${total} possible across ${COUNTIES.length} counties`} />
+        <Kpi t="Working" v={working} d={`${held ? Math.round((working / held) * 100) : 0}% of what we hold`} />
+        <Kpi t="Not working" v={problems.length}
+          cls={problems.length ? 'alert' : undefined}
+          dTone={problems.length ? 'bad' : 'ok'} d="listed below" />
+        <Kpi t="No link at all" v={total - held} d="nothing to check" />
+        <Kpi t="Next check" v={fmtDate(nextCheck())} d={`every ${LINKCHECK.every} days`} />
       </div>
 
-      <Sec>Everything that needs attention — {problems.length}</Sec>
+      <Sec>What is broken, grouped by what went wrong</Sec>
       {problems.length === 0 ? (
         <div className="tbl"><div className="empty"><span className="ei">✓</span>
           <p>Every county source is working.</p></div></div>
@@ -147,7 +149,7 @@ export function LinkMonitor() {
         </div></div></div>
       )}
 
-      <Sec>How the check runs</Sec>
+      <Sec>The check</Sec>
       <div className="card"><div className="cb">
         <dl className="kv">
           <dt>Frequency</dt><dd>Every {LINKCHECK.every} days</dd>
@@ -156,16 +158,6 @@ export function LinkMonitor() {
           <dd className="mono">{fmtDate(nextCheck())}{due && <span className="warn"> · overdue</span>}</dd>
           <dt>Notifies</dt><dd>Company admins</dd>
         </dl>
-        <Sec>Link types</Sec>
-        <div className="rows" style={{ border: 'none', borderRadius: 0 }}>
-          {LINKTYPES.map((t) => (
-            <div className="rw" key={t.k}>
-              <span className="gr">·</span>
-              <span><b>{t.n}</b><div className="sd">{t.note}</div></span>
-              <span className="gr" style={{ fontSize: '11.5px' }}>{t.req ? 'required' : 'optional'}</span>
-            </div>
-          ))}
-        </div>
       </div></div>
     </>
   )

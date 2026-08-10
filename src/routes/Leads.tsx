@@ -7,7 +7,7 @@ import {
 import { fmtDate } from '@/lib/format'
 import { useSession } from '@/lib/session'
 import { DataTable, type Row } from '@/components/DataTable'
-import { Banner, Chip, Empty, Kpi, PageHead, Sec } from '@/components/ui'
+import { Banner, Chip, Empty, PageHead, Sec } from '@/components/ui'
 
 /* ══════════ LEADS LIST ══════════ */
 export function Leads() {
@@ -16,7 +16,6 @@ export function Leads() {
   const [pill, setPill] = useState('all')
 
   const followUp = LEADS.filter(needsFollowUp)
-  const open = LEADS.filter((l) => !['won', 'lost'].includes(l.st))
 
   const rows: Row[] = LEADS.map((l) => {
     const age = leadAge(l)
@@ -30,6 +29,7 @@ export function Leads() {
       cells: [
         <><div className="v"><b>{l.co}</b></div><div className="s">{l.loc}</div></>,
         <><div className="v" style={{ fontSize: '12.5px' }}>{main.n}</div><div className="s">{main.role}</div></>,
+        <div className="v" style={{ fontSize: '12.5px' }}>{l.loc}</div>,
         <Chip tone={tone}>{label}</Chip>,
         <>
           <div className="v mono" style={{ fontSize: '12.5px' }}>{fmtDate(lastTouch(l))}</div>
@@ -48,7 +48,7 @@ export function Leads() {
     <>
       <PageHead
         title="Leads"
-        sub="Free-form statuses, no enforced pipeline. A follow-up alert is raised by hand or derived from how long the lead has gone quiet."
+        sub="Firms you are trying to win. A lead that has gone quiet is the point of this screen."
         actions={<>
           <button className="btn g" onClick={() => toast('Importing a CSV needs a file picker and a column mapper')}>Import</button>
           <button className="btn" onClick={() => navigate({ to: '/leads/new' })}>＋ Add lead</button>
@@ -61,19 +61,10 @@ export function Leads() {
         </Banner>
       )}
 
-      <div className="kpis">
-        <Kpi t="Open" icon="◎" v={open.length} d="still in play" />
-        <Kpi t="Need follow-up" icon="◷" v={followUp.length}
-          cls={followUp.length ? 'warnk' : undefined} dTone="warn" d={`flagged or quiet ${STALE_WARN}d+`} />
-        <Kpi t="Won" icon="✓" v={LEADS.filter((l) => l.st === 'won').length} dTone="ok" d="signed" />
-        <Kpi t="Lost / not now" icon="·"
-          v={LEADS.filter((l) => ['lost', 'notnow'].includes(l.st)).length} d="worth revisiting later" />
-      </div>
-
       <DataTable
         cols={[
-          { l: 'Company', w: 190, f: 1.4 }, { l: 'Contact', w: 160 }, { l: 'Status', w: 110 },
-          { l: 'Last contact', w: 130 }, { l: 'Flag', w: 90 },
+          { l: 'Company', w: 180, f: 1.3 }, { l: 'Main contact', w: 160 }, { l: 'Location', w: 140 },
+          { l: 'Status', w: 110 }, { l: 'Last contact', w: 130 }, { l: 'Follow up', w: 100 },
         ]}
         rows={rows}
         min={820}
@@ -83,7 +74,8 @@ export function Leads() {
         onPill={setPill}
         pills={[
           { key: 'all', label: 'All', count: rows.length },
-          { key: 'followup', label: 'Need follow-up', count: countIn('followup'), urgent: true },
+          { key: 'followup', label: 'Needs follow-up', count: countIn('followup'), urgent: true },
+          { key: 'open', label: 'Open', count: LEADS.filter((x) => !['won', 'lost'].includes(x.st)).length },
           { key: 'new', label: 'New', count: countIn('new') },
           { key: 'contacted', label: 'Contacted', count: countIn('contacted') },
           { key: 'interested', label: 'Interested', count: countIn('interested') },
