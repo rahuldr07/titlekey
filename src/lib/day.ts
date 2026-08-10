@@ -174,7 +174,10 @@ export function runDay(days: Day[]) {
     }
   }
   const today = days[days.length - 1]!.arrivals.flatMap((s) => s.orders)
-  return { assigns, exc, load, fired, narrowed, today, deptOut }
+  /* how often the self-review rule actually removed somebody — "working silently" */
+  const avoided = narrowed.r4 ?? 0
+  const totalStages = days.flatMap((d) => d.arrivals).flatMap((s) => s.orders).length * ASSIGN_STAGES.length
+  return { assigns, exc, load, fired, narrowed, today, deptOut, avoided, totalStages }
 }
 
 export const DAY = makeDay()
@@ -216,5 +219,26 @@ export function staffWork() {
     r.tot++
   })
   Object.values(m).forEach((r) => { r.pct = r.tot ? Math.round((r.done / r.tot) * 100) : 0 })
+  return m
+}
+
+/** Every day in the stream with its order count — the Reports day picker. */
+export const DAY_SUMMARY = DAY.map((d, i) => ({
+  dk: d.dk,
+  date: d.date,
+  today: i === DAY.length - 1,
+  orders: d.arrivals.flatMap((s) => s.orders),
+}))
+
+export const ordersFor = (dk: string | 'all') =>
+  dk === 'all'
+    ? DAY_SUMMARY.flatMap((d) => d.orders)
+    : (DAY_SUMMARY.find((d) => d.dk === dk)?.orders ?? [])
+
+/** Stage totals for today's intake — how many sit in each stage right now. */
+export const stageTotals = (orders: DayOrder[]) => {
+  const m: Record<string, DayOrder[]> = {}
+  ASSIGN_STAGES.forEach((s) => { m[s] = [] })
+  orders.forEach((o) => { const c = curStage(o); if (c) m[c]!.push(o) })
   return m
 }

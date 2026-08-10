@@ -271,3 +271,27 @@ export const INTEGRATIONS: [string, string, string, string][] = [
   ['💬', 'Slack', 'Past-due and delivery notices into a channel.', 'Connect'],
   ['◈', 'County portal credentials', 'Store per-county logins so searchers do not keep their own list.', 'Set up'],
 ]
+
+/* ══════════ WHO CAN WORK WHAT — coverage levels ══════════
+   Nobody searches every state and nobody types every product. A level is a
+   coverage envelope; somebody with no level is NOT restricted, because
+   defaulting the other way would mean a new person can do nothing. */
+export interface Level {
+  id: string; n: string; note: string
+  states: string[] | 'all'
+  counties: Record<string, string[]>
+  products: string[] | 'all'
+}
+export const LEVELS: Level[] = [
+  { id: 'l1', n: 'Level 1',
+    note: 'Learning. Current owner searches in the counties they have been shown.',
+    states: ['PA', 'GA'], counties: { PA: ['Cambria', 'Luzerne'] }, products: ['COS'] },
+  { id: 'l2', n: 'Level 2',
+    note: 'Confident on the standard products across the states we work most.',
+    states: ['PA', 'GA', 'CT', 'KY', 'TN'], counties: {},
+    products: ['COS', 'TOS', 'Update', 'PRLP', 'LIEN', '10Y', '20Y'] },
+  { id: 'l3', n: 'Level 3',
+    note: 'Everything, including the long searches and the courthouse states.',
+    states: 'all', counties: {}, products: 'all' },
+]
+export const NOLIMIT = { states: 'all' as const, counties: {}, products: 'all' as const }
