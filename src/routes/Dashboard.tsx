@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { NOW, ORDERS, PASTDUE, STAGES, STATUS, TZ, st, stColor } from '@/data/seed'
-import { runEngine } from '@/lib/engine'
+import { RUN, curStage } from '@/lib/day'
 import { fmtDate } from '@/lib/format'
 import { atRisk, orderPlan } from '@/lib/sla'
 import { useSession } from '@/lib/session'
@@ -28,8 +28,12 @@ export function Dashboard() {
   for (const o of ORDERS) counts[o.stt] = (counts[o.stt] ?? 0) + 1
 
   const shown = pipe ? ORDERS.filter((o) => o.stt === pipe) : ORDERS.filter((o) => !o.done && o.due < NOW)
-  const { exc } = runEngine()
-  const stillMoving = ORDERS.filter((o) => !o.done).length
+  const todayOrders = RUN.today
+  const excToday = RUN.exc.filter((e) => e.today)
+  /* The original counts ORDERS that cleared every department, not stage-assignments:
+     delivered = no stage left unassigned; still moving = at least one outstanding. */
+  const deliveredToday = todayOrders.filter((o) => !curStage(o))
+  const movingToday = todayOrders.filter((o) => curStage(o))
 
   return (
     <>
@@ -132,14 +136,14 @@ export function Dashboard() {
 
       <Sec>Today</Sec>
       <div className="kpis">
-        <Kpi t="Received" v={ORDERS.length} d={`${fmtDate(NOW)} · every client`}
+        <Kpi t="Received" v={todayOrders.length} d={`${fmtDate(NOW)} · every client`}
           onClick={() => navigate({ to: '/reports', search: { tab: 'Received' } })} />
-        <Kpi t="Delivered" v={delivered.length} dTone="ok" d="through every department"
+        <Kpi t="Delivered" v={deliveredToday.length} dTone="ok" d="through every department"
           onClick={() => navigate({ to: '/reports', search: { tab: 'Received' } })} />
-        <Kpi t="Still moving" v={stillMoving} cls="warnk" dTone="warn" d="somewhere in the pipeline"
+        <Kpi t="Still moving" v={movingToday.length} cls="warnk" dTone="warn" d="somewhere in the pipeline"
           onClick={() => navigate({ to: '/reports', search: { tab: 'Received' } })} />
-        <Kpi t="Could not be placed" v={exc.length}
-          cls={exc.length ? 'alert' : undefined} dTone={exc.length ? 'bad' : 'ok'}
+        <Kpi t="Could not be placed" v={excToday.length}
+          cls={excToday.length ? 'alert' : undefined} dTone={excToday.length ? 'bad' : 'ok'}
           d="waiting on a person"
           onClick={() => navigate({ to: '/reports', search: { tab: 'By department' } })} />
       </div>

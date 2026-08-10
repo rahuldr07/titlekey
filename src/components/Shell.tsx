@@ -10,7 +10,8 @@ import {
   NOW, PASTDUE, ORDERS, TENANTS, TZ, TZ2, roleName, who,
 } from '@/data/seed'
 import { FOLLOWUP, LINKCHECK, brokenLinks, nextCheck } from '@/data/seed2'
-import { runEngine, thinDepartments } from '@/lib/engine'
+import { thinDepartments } from '@/lib/engine'
+import { RUN } from '@/lib/day'
 import { fmtDate, fmtTime, initials } from '@/lib/format'
 import { orderPlan } from '@/lib/sla'
 import { visibleNav } from '@/lib/nav'
@@ -48,7 +49,7 @@ function alerts(): Alert[] {
     sev: 'warn', t: `${slipping.length} order${slipping.length === 1 ? '' : 's'} behind an internal checkpoint`,
     d: 'Still recoverable, but the slack is going', go: '/orders',
   })
-  const { exc } = runEngine()
+  const exc = RUN.exc
   if (exc.length) out.push({
     sev: 'warn', t: `${exc.length} stages could not be assigned`,
     d: 'Waiting on a person to place them', go: '/assign',

@@ -27,15 +27,21 @@ export const Chip = ({ children, tone = 'n' }: { children: ReactNode; tone?: Ton
 /* ─── KPI tile. Original markStatic(): anything that opens keeps the raised card
    treatment; anything that is just a figure is flattened, so "looks clickable"
    and "is clickable" stay the same set. ─── */
-export function Kpi({ t, icon, v, d, cls, dTone, onClick, sel }: {
+export function Kpi({ t, icon, v, d, cls, dTone, onClick, sel, tip, vc }: {
   t: string; icon?: string; v: ReactNode; d?: ReactNode
   cls?: 'alert' | 'warnk'; dTone?: 'ok' | 'warn' | 'bad' | 'gr'
-  onClick?: () => void; sel?: boolean
+  onClick?: () => void; sel?: boolean; tip?: string; vc?: string
 }) {
+  /* Markup matches the original kcard(): the icon is a plain 70%-opacity span,
+     and the `›` affordance appears ONLY on tiles that actually open something. */
   const body = (
     <>
-      <div className="t">{t}{icon && <span className="i">{icon}</span>}</div>
-      <div className="v">{v}</div>
+      <div className="t">
+        {t}
+        {icon && <span aria-hidden="true" style={{ opacity: 0.7 }}>{icon}</span>}
+        {onClick && <span className="i" aria-hidden="true">›</span>}
+      </div>
+      <div className={`v ${vc ?? ''}`}>{v}</div>
       {d && <div className={`d ${dTone ?? 'gr'}`}>{d}</div>}
     </>
   )
@@ -45,6 +51,7 @@ export function Kpi({ t, icon, v, d, cls, dTone, onClick, sel }: {
       className={`kpi ${cls ?? ''} ${sel ? 'sel' : ''}`}
       role="button"
       tabIndex={0}
+      title={tip ?? 'Open the detail'}
       onClick={onClick}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
     >

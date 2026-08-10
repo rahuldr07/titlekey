@@ -1,7 +1,9 @@
 import { useNavigate } from '@tanstack/react-router'
 import { STAFF, AVAIL, who } from '@/data/seed'
 import { RULES } from '@/data/seed2'
-import { EXCLABEL, runEngine, type ExceptionCause } from '@/lib/engine'
+import { type ExceptionCause } from '@/lib/engine'
+import { RUN } from '@/lib/day'
+import { who as whoName } from '@/data/seed'
 import { useSession } from '@/lib/session'
 import { Banner, Chip, Kpi, PageHead, Sec } from '@/components/ui'
 
@@ -21,10 +23,15 @@ const PL_GRID = '150px 130px 160px 1fr'
 export function Assignment() {
   const navigate = useNavigate()
   const { toast } = useSession()
-  const { placements, exc, load } = runEngine()
+  /* The original's Assignment screen reads the simulated day's pass (RUN),
+     not a one-off run over the eight sample orders. Today's slice is what the
+     screen reports on. */
+  const load = RUN.load
+  const placements = RUN.assigns.filter((a) => a.today)
+  const exc = RUN.exc.filter((e) => e.today)
 
   const byCause = exc.reduce<Record<string, typeof exc>>((acc, e) => {
-    ;(acc[e.cause] ??= []).push(e)
+    ;(acc[e.why] ??= []).push(e)
     return acc
   }, {})
   const roster = STAFF.filter((s) => s.dep.length > 0)
@@ -105,7 +112,7 @@ export function Assignment() {
                       <div className="s">{e.o.pr}</div></div>
                     <div className="cell"><div className="v" style={{ fontSize: '12.5px' }}>{e.stage}</div></div>
                     <div className="cell"><div className="v" style={{ fontSize: '12.5px' }}>{e.o.cl}</div></div>
-                    <div className="cell"><div className="v" style={{ fontSize: '12.5px' }}>{EXCLABEL[e.cause][0]}</div></div>
+                    <div className="cell"><div className="v" style={{ fontSize: '12.5px' }}>{e.t}</div></div>
                   </div>
                 ))}
               </div>
@@ -128,8 +135,8 @@ export function Assignment() {
               <div key={`${p.o.id}-${p.stage}`} className="trow" style={{ gridTemplateColumns: PL_GRID, cursor: 'default' }}>
                 <div className="cell"><div className="v mono">{p.o.id}</div><div className="s">{p.o.cl}</div></div>
                 <div className="cell"><div className="v">{p.stage}</div></div>
-                <div className="cell"><div className="v">{p.who.n}</div></div>
-                <div className="cell"><div className="s">{p.why}</div></div>
+                <div className="cell"><div className="v">{whoName(p.who)}</div></div>
+                <div className="cell"><div className="s">arrived {p.hr}:00 · emptiest in {p.stage}</div></div>
               </div>
             ))}
           </div>

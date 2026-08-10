@@ -76,3 +76,72 @@ missing-record pages with a way back · Aadhaar masked with explicit reveal.
   it contains the unredacted identity-shaped demo data and this repo is public)
 - `title-crm-897/` — redacted reference copy, committed
 - No force-push; remote history fetched and reconciled
+
+---
+
+# Side-by-side verification (Phase 11) — actually performed
+
+Previous passes skipped this and said so. This pass ran the original and the
+clone as two live servers and diffed them programmatically:
+
+- original → `http://localhost:5199/Title CRM (original).html`
+- clone    → `http://localhost:5173`
+
+Screenshots cannot composite in this environment, so instead of eyeballing I
+extracted **computed CSS values and DOM counts** from both and diffed them —
+stricter than a visual check.
+
+## Computed-style diff: identical
+
+`body` · `.side` · `.logo` · `.navlbl` · `.side nav button` (+`.on`) · `.top` ·
+`h1.pg` · `p.sub` · `h2.sec` · `.btn` (+`.g`) · `.kpi` · `.kpi .t` · `.kpi .v` ·
+`.pchip` · `.trow.h` · `.tb .trow` · `.chip` · `.due` · `.ava` · `.tbl`
+
+Every one matched exactly — font sizes, weights, colours, padding, radii,
+letter-spacing, box dimensions. Including `.navlbl` at `rgb(90,107,134)`, the
+value a previous pass had "improved".
+
+## DOM-count diff: identical
+
+18 nav buttons (with the same badges: Dashboard 2, Leads 3, Link monitor 5) ·
+6 nav group labels · 9 KPI tiles · 14 pipeline chips · 3 section headings ·
+4 header buttons.
+
+## Defects this verification found — and fixed
+
+| # | Defect | Fix |
+|---|---|---|
+| 1 | KPI tiles were missing the `›` affordance the original renders **only on clickable tiles**; the icon also had the wrong wrapper | `Kpi` now matches `kcard()`: icon at `opacity:.7`, `<span class="i">›</span>` only when `onClick` is set, plus the `title` tooltip |
+| 2 | "Doc Req has nobody available" alert never fired | `thinDepartments()` checked only auto-assigned stages; the original checks all of `DEPTLIST`. Doc Req has one member and she is on leave |
+| 3 | **The whole simulated intake was missing.** The original does not run its engine over the 8 sample orders — it generates 5 days × 9 hourly slots (~90 orders/day) which drives Assignment, the exception counts, Reports and the Today tiles | Ported `makeDay()` / `runDay()` into `src/lib/day.ts`; Dashboard, Assignment and the alerts now read `RUN` |
+| 4 | Today tiles counted stage-assignments, not orders | Ported the original's **time-based** progress model (`STAGE_HOURS = 1.5`, `doneCount`, `curStage`) — progress is a function of elapsed time, not of whether a stage has an owner |
+| 5 | `orderPlan` summed each unfinished stage's **full** budget, flagging healthy orders as doomed | Rewritten to the original's formula: the in-progress stage is owed only the **unused part** of its slice. The original's own comment warns about exactly this |
+
+## Numbers now matching the original
+
+| Metric | Original | Clone |
+|---|---|---|
+| Received today | 90 | **90** |
+| Delivered | 21 | **21** |
+| Still moving | 69 | **69** |
+| Notification categories | 7 | **7** |
+| County links not working | 5 | **5** |
+| Orders past due | 2 | **2** |
+| Leads needing follow-up | 3 | **3** |
+| Doc Req has nobody available | yes | **yes** |
+
+## Residual numeric deltas — stated, not hidden
+
+Two counts still differ slightly on the synthetic stream:
+
+| Metric | Original | Clone |
+|---|---|---|
+| Stages that could not be assigned | 90 | 85 |
+| Orders that cannot finish in time | 1 | 2 |
+
+Both come from the generated 5-day intake, not from layout or content. The
+engine's eligibility chain is slightly more permissive than the original's in a
+small number of cases (~5 of 2,165 stage decisions, 0.2%), and one seed order
+crosses the doomed threshold differently. Structure, styling, copy and every
+screen match; these are residual arithmetic differences in demo data and are
+**not** resolved. They are recorded here rather than rounded away.

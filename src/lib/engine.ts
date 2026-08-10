@@ -4,7 +4,7 @@
  * daily target → fill the emptiest first. Unplaceable stages become typed
  * exceptions, each cause with its own fix.
  */
-import { ASSIGN_STAGES, ORDERS, PAIRS, STAFF, type Order, type Staff } from '@/data/seed'
+import { ASSIGN_STAGES, DEPTLIST, ORDERS, PAIRS, STAFF, type Order, type Staff } from '@/data/seed'
 import { RULES } from '@/data/seed2'
 
 export type ExceptionCause = 'capacity' | 'unavailable' | 'no-dept' | 'self'
@@ -67,9 +67,14 @@ export function runEngine(orders: Order[] = ORDERS, staff: Staff[] = STAFF) {
   return { placements, exc, load }
 }
 
-/** Departments with nobody available at all — the original's "thin" alert. */
+/**
+ * Departments with nobody available at all — the original's "thin" alert.
+ * Checks DEPTLIST, not just the auto-assigned stages: Doc Req has one member
+ * and she is on leave, which the original reports and an ASSIGN_STAGES-only
+ * check would silently miss.
+ */
 export function thinDepartments(): string[] {
-  return ASSIGN_STAGES.filter(
-    (d) => !STAFF.some((s) => s.dep.includes(d) && s.active && s.avail === 'ok'),
-  )
+  return DEPTLIST
+    .filter((d) => !STAFF.some((s) => s.dep.includes(d.n) && s.active && s.avail === 'ok'))
+    .map((d) => d.n)
 }
