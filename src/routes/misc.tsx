@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { AVAIL, NOW, ORDERS, STAFF, STAGES, roleName, st } from '@/data/seed'
-import { INTAKE, RSECT } from '@/data/seed3'
+import { INTAKE, RSECT_INITIAL, RTEMPLATES, type RField, type RSection } from '@/data/seed3'
 import { INTEGRATIONS } from '@/data/seed2'
-import { fmtDT, initials } from '@/lib/format'
+import { fmtDate, fmtDT, initials } from '@/lib/format'
+import { downloadCSV, downloadJSON, dstamp, type CsvRow } from '@/lib/csv'
 import { orderPlan } from '@/lib/sla'
 import { useSession } from '@/lib/session'
 import { DataTable, type Row } from '@/components/DataTable'
+import { Modal } from '@/components/Modal'
 import { Assume, Banner, Chip, Due, Empty, Kpi, PageHead, Sec } from '@/components/ui'
 import { getRun, isDone } from '@/lib/day'
 
@@ -200,21 +202,62 @@ export function Intake() {
   )
 }
 
-/* ══════════ REPORT GENERATOR ══════════ */
+/* ══════════ REPORT GENERATOR ══════════
+   Ported from the original's S.repgen. The original flags this whole screen as
+   "a proposal, not a reading of your system" — that banner and its wording are
+   preserved. Field edits clear their own flag (setField), the ⤢ source-page
+   button opens the original's notBuilt modal, and CSV/JSON are real downloads. */
+
+/** The original's MONO test — which captured values render in the mono face. */
+const MONOFIELD = /date|recorded|dated|book|instrument|amount|total|land|building|min|consider/i
+
 export function RepGen() {
   const { toast } = useSession()
+  const navigate = useNavigate()
   const [tab, setTab] = useState<'Capture' | 'Preview' | 'Templates'>('Capture')
-  const flagged = RSECT.flatMap(([, fields]) => fields).filter((f) => f[2]).length
+  /* RSECT is mutable in the original — editing a field clears its flag. */
+  const [sections, setSections] = useState<RSection[]>(() =>
+    RSECT_INITIAL.map(([n, fs]) => [n, fs.map((f) => [...f] as RField)] as RSection))
+  const [notBuilt, setNotBuilt] = useState<{ what: string; needs: string } | null>(null)
+
+  const flags = sections.flatMap(([, fs]) => fs).filter((f) => f[2] === 'flag').length
+  const fieldCount = sections.reduce((a, [, fs]) => a + fs.length, 0)
+
+  /* Typing into the abstract writes to the abstract. A flagged field clears its
+     flag once a person has looked at it — that is the whole point of flagging it. */
+  const setField = (si: number, fi: number, v: string) => {
+    setSections((prev) => prev.map((sec, i) => {
+      if (i !== si) return sec
+      return [sec[0], sec[1].map((f, k) => {
+        if (k !== fi) return f
+        const next: RField = [f[0], String(v), f[2], f[3]]
+        if (f[2] === 'flag' && String(v).trim()) next[2] = 'ok'
+        if (f[2] === 'na' && String(v).trim() && String(v) !== 'Not Available') next[2] = 'ok'
+        return next
+      })]
+    }))
+  }
+
+  const exportAbstract = (kind: 'csv' | 'json') => {
+    const rows: CsvRow[] = [['Section', 'Field', 'Value', 'Flag']]
+    sections.forEach(([name, fs]) => fs.forEach((f) => rows.push([name, f[0], f[1], f[2] || ''])))
+    if (kind === 'json') {
+      const obj: Record<string, Record<string, string>> = {}
+      sections.forEach(([name, fs]) => { obj[name] = Object.fromEntries(fs.map((f) => [f[0], f[1]])) })
+      const name = `abstract-${dstamp()}.json`
+      downloadJSON(name, JSON.stringify(obj, null, 2))
+      return toast(`${name} — ${rows.length - 1} fields`)
+    }
+    downloadCSV(`abstract-${dstamp()}.csv`, rows, toast)
+  }
 
   return (
     <>
-      <PageHead title="Report generator" sub="Capture the abstract, section by section."
+      <PageHead title="Report generator" sub="Where the abstract is typed and the deliverable is produced."
         actions={<>
-          <button className="btn g" onClick={() => toast(`abstract export — every value on this screen, section by section`)}>Export CSV</button>
-          <button className="btn g" onClick={() => toast('JSON carries the same fields as the CSV')}>JSON</button>
-          <button className="btn g" onClick={() => toast('Producing a PDF needs a page renderer with your letterhead — CSV and JSON are working now')}>PDF</button>
-          <button className="btn" disabled={flagged > 0}>
-            {flagged > 0 ? `${flagged} flag${flagged === 1 ? '' : 's'} to clear` : 'Export'}
+          <span className="gr mono" style={{ fontSize: '12.5px' }}>4192401-1 · McIntosh, GA</span>
+          <button className="btn g" onClick={() => navigate({ to: '/orders/$orderId', params: { orderId: '4192401-1' } })}>
+            Open order
           </button>
         </>} />
 
@@ -233,40 +276,143 @@ export function RepGen() {
         ))}
       </div>
 
-      {tab === 'Capture' && RSECT.map(([section, fields]) => (
-        <div className="card" key={section} style={{ marginBottom: 16 }}>
-          <div className="ch"><h2>{section}</h2>
-            <div className="r gr" style={{ fontSize: '12.5px' }}>{fields.length} fields</div></div>
-          <div className="cb">
-            <div className="frm">
-              {fields.map(([label, value, flag]) => (
-                <div className="fld" key={label}>
-                  <label htmlFor={`f-${section}-${label}`}>{label}</label>
-                  <input className="inp" id={`f-${section}-${label}`} defaultValue={value} />
-                  {flag && <div className="hint warn">Needs checking against the scan</div>}
+      {tab === 'Capture' && (
+        <div className="two">
+          <div>
+            {sections.map(([section, fields], si) => (
+              <div className="card" key={section} style={{ marginBottom: 14 }}>
+                <div className="ch"><h2>{section}</h2>
+                  <div className="r gr" style={{ fontSize: '11.5px' }}>
+                    {fields.length} field{fields.length === 1 ? '' : 's'}
+                    {fields[0]?.[3] ? ` · source pg ${fields[0][3]}` : ''}
+                  </div>
                 </div>
-              ))}
-            </div>
+                <div className="cb" style={{ display: 'grid', gap: 10 }}>
+                  {fields.map((f, fi) => (
+                    <div key={f[0]} style={{ display: 'grid', gridTemplateColumns: '150px minmax(0,1fr) 30px', gap: 11, alignItems: 'start' }}>
+                      <label className="gr" style={{ fontSize: '12.5px', paddingTop: 8 }} htmlFor={`f-${si}-${fi}`}>{f[0]}</label>
+                      <div>
+                        {/* The original binds DOM onchange: it commits on blur, and only
+                            when the value actually changed. onBlur + the equality guard
+                            reproduces that exactly — a flag must not clear on a bare focus. */}
+                        <input
+                          className={`inp ${MONOFIELD.test(f[0]) ? 'mono' : ''}`}
+                          id={`f-${si}-${fi}`}
+                          defaultValue={f[1]}
+                          onBlur={(e) => { if (e.target.value !== f[1]) setField(si, fi, e.target.value) }}
+                          style={f[2] === 'flag'
+                            ? { borderColor: 'var(--flagline)', background: 'var(--flag)' }
+                            : f[2] === 'na' ? { color: 'var(--gr)' } : undefined}
+                        />
+                        {f[2] === 'flag' && (
+                          <div className="hint warn">
+                            Readers disagree on one character — 2025-002687 vs 2025-00268T. Check page {f[3]}.
+                          </div>
+                        )}
+                        {f[2] === 'na' && (
+                          <div className="hint">
+                            Nothing stated on the instrument — recorded as <b>Not Available</b>, not left blank.
+                          </div>
+                        )}
+                      </div>
+                      <button className="btn g sm" style={{ padding: '6px 8px' }}
+                        title={`Jump to source page ${f[3] ?? '—'}`}
+                        onClick={() => setNotBuilt({ what: 'Jumping to the scan', needs: 'the scanned search package as a PDF, page-indexed' })}>
+                        ⤢
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
+          <aside>
+            <div className="card p" style={{ position: 'sticky', top: 76 }}>
+              <div className="lb">Client format</div>
+              <dl className="kv" style={{ fontSize: '12.5px' }}>
+                <dt>Template</dt><dd>NJ — Standard</dd>
+                <dt>Dates</dt><dd className="mono">MM/DD/YYYY</dd>
+                <dt>Names</dt><dd>Title Case</dd>
+                <dt>Money</dt><dd className="mono">$x,xxx.00</dd>
+                <dt>Missing</dt><dd>Not Available</dd>
+                <dt>Recording</dt><dd>Book/Page + Inst#</dd>
+                <dt>Security header</dt><dd>Deed to Secure Debt</dd>
+              </dl>
+              <div className="lb" style={{ marginTop: 20 }}>Before it can go out</div>
+              <div className="stepn"><span className="sn done">✓</span><span>All sections present</span></div>
+              <div className="stepn">
+                <span className={`sn ${flags ? 'now' : 'done'}`}>{flags ? '!' : '✓'}</span>
+                <span>{flags ? `${flags} field to confirm` : 'No open flags'}</span>
+              </div>
+              <div className="stepn"><span className="sn done">✓</span><span>Every value has a source page</span></div>
+              <div className="stepn"><span className="sn now">3</span><span>Quality ratings not entered</span></div>
+              <button className="btn" style={{ width: '100%', marginTop: 14 }} onClick={() => setTab('Preview')}>Preview report</button>
+              <button className="btn g" style={{ width: '100%', marginTop: 8 }}
+                onClick={() => toast(`Draft saved — ${fieldCount} fields`)}>Save draft</button>
+            </div>
+          </aside>
         </div>
-      ))}
+      )}
 
       {tab === 'Preview' && (
-        <div className="card"><div className="cb">
-          {RSECT.map(([section, fields]) => (
-            <div key={section} style={{ marginBottom: 20 }}>
-              <Sec>{section}</Sec>
-              <dl className="kv">
-                {fields.map(([label, value, flag]) => (
-                  <div key={label} style={{ display: 'contents' }}>
-                    <dt>{label}</dt>
-                    <dd>{value} {flag && <Chip tone="r">check</Chip>}</dd>
-                  </div>
-                ))}
-              </dl>
+        <div className="two">
+          <div className="card p" style={{ fontFamily: 'var(--mono)', fontSize: '11.5px', lineHeight: 1.85 }}>
+            <div style={{ textAlign: 'center', fontWeight: 600, letterSpacing: '.04em' }}>TITLE SEARCH REPORT — NJ STANDARD</div>
+            <div style={{ textAlign: 'center' }} className="gr">
+              Order 4192401-1 · Effective {fmtDate(new Date(NOW.getTime() - 24 * 7 * 36e5))}
             </div>
-          ))}
-        </div></div>
+            {sections.map(([section, fields]) => (
+              <div key={section}>
+                <div style={{ fontSize: '10.5px', letterSpacing: '.09em', borderBottom: '1px solid var(--hair)', paddingBottom: 4, margin: '18px 0 9px' }}>
+                  {section.toUpperCase()}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '150px minmax(0,1fr)', gap: '3px 14px' }}>
+                  {fields.map((f) => (
+                    <div key={f[0]} style={{ display: 'contents' }}>
+                      <span className="gr">{f[0]}</span><span>{f[1]}</span>
+                    </div>
+                  ))}
+                </div>
+                {fields[0]?.[3] && (
+                  <div style={{ border: '1.5px dashed var(--flagline)', background: 'var(--flag)', borderRadius: 9, padding: 16, textAlign: 'center', color: '#92610A', fontSize: '10.5px', margin: '11px 0' }}>
+                    [ source image — {section}, page {fields[0][3]} ]
+                  </div>
+                )}
+              </div>
+            ))}
+            <div style={{ fontStyle: 'italic', color: 'var(--gr)', fontSize: '10.5px', marginTop: 16, lineHeight: 1.75 }}>
+              Please review the enclosed search file and notify us within thirty (30) days of receipt if there are any questions, clarifications, or missing information. If no response is received within this period, the search shall be deemed accepted as complete and accurate to the best of our knowledge.
+            </div>
+          </div>
+          <aside>
+            <div className="card p" style={{ position: 'sticky', top: 76 }}>
+              <div className="lb">Export</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <button className="btn g sm" onClick={() => exportAbstract('csv')}>CSV</button>
+                <button className="btn g sm" onClick={() => exportAbstract('json')}>JSON</button>
+                <button className="btn g sm" onClick={() => setNotBuilt({ what: 'PDF', needs: 'a page renderer with your letterhead' })}>PDF</button>
+                <button className="btn g sm" onClick={() => setNotBuilt({ what: 'DOCX', needs: 'a Word template matching your current report' })}>DOCX</button>
+              </div>
+              <div className="bnr r" style={{ margin: '14px 0 0', padding: '11px 13px' }}>
+                <span className="bi">⚑</span>
+                <div style={{ fontSize: '12.5px' }}>
+                  <div className="bt" style={{ fontSize: '12.5px' }}>Export is blocked</div>
+                  {flags} field still flagged and ratings are not entered.
+                </div>
+              </div>
+              <div className="lb" style={{ marginTop: 20 }}>Deliver</div>
+              <p className="gr" style={{ fontSize: '12.5px' }}>
+                The client gets a sign-in link, never an attachment carrying personal information.
+              </p>
+              <button className="btn" style={{ width: '100%', marginTop: 10 }} disabled
+                title="Clear the flagged fields and enter the ratings first">Deliver to client</button>
+              <p className="gr" style={{ fontSize: '11.5px', marginTop: 7 }}>
+                Not yet — <b>{flags} field{flags === 1 ? '' : 's'} still flagged</b> and the ratings are
+                not entered. A report goes out once, so it goes out finished.
+              </p>
+            </div>
+          </aside>
+        </div>
       )}
 
       {tab === 'Templates' && (
@@ -274,19 +420,52 @@ export function RepGen() {
           <div className="ch"><h2>Report templates</h2>
             <div className="r">
               <button className="btn sm"
-                onClick={() => toast('Learning a template needs three of your finished reports to read the layout from')}>
+                onClick={() => setNotBuilt({ what: 'Learning a template', needs: 'three of your finished reports to read the layout from' })}>
                 ＋ Add template
               </button>
             </div>
           </div>
-          <div className="cb">
-            <Empty icon="▤">
-              No templates yet. Send me one of your finished reports and the formatted
-              version becomes a formatting job rather than a guess.
-            </Empty>
-          </div>
+          <div className="tsc"><div style={{ minWidth: 760 }}>
+            <div className="trow h" style={{ gridTemplateColumns: '1.3fr 130px 130px 130px 120px' }}>
+              <span>Template</span><span>Client</span><span>Learned from</span><span>Used</span><span>Status</span>
+            </div>
+            <div className="tb">
+              {RTEMPLATES.map((t) => (
+                <div className="trow" key={t[0]} style={{ gridTemplateColumns: '1.3fr 130px 130px 130px 120px' }}>
+                  <div className="cell"><div className="v">{t[0]}</div></div>
+                  <div className="cell"><div className="v gr">{t[1]}</div></div>
+                  <div className="cell"><div className="v mono">{t[2]}</div></div>
+                  <div className="cell"><div className="v mono">{t[3]}</div></div>
+                  <div className="cell"><Chip tone={t[5]}>{t[4]}</Chip></div>
+                </div>
+              ))}
+            </div>
+          </div></div>
+          <p className="gr" style={{ fontSize: '12.5px', marginTop: 12 }}>
+            A template holds section order, labels, date and money conventions, Book/Page vs
+            Instrument #, and where source images sit. Changing one applies to new reports only.
+          </p>
         </div>
       )}
+
+      {/* The original's notBuilt() modal — same copy, same two actions. */}
+      <Modal
+        open={!!notBuilt}
+        title={`${notBuilt?.what ?? ''} export is not built yet`}
+        onClose={() => setNotBuilt(null)}
+        footer={<>
+          <button className="btn g" onClick={() => setNotBuilt(null)}>Close</button>
+          <button className="btn" onClick={() => { setNotBuilt(null); exportAbstract('csv') }}>Export CSV instead</button>
+        </>}>
+        <p style={{ fontSize: '13.5px' }}>
+          Producing a {notBuilt?.what} needs <b>{notBuilt?.needs}</b>, which I do not have.
+        </p>
+        <p className="gr" style={{ fontSize: '12.5px' }}>
+          CSV and JSON carry the same fields and are working now — every value on this screen,
+          section by section. Send me one of your finished reports and the {notBuilt?.what} version
+          becomes a formatting job rather than a guess.
+        </p>
+      </Modal>
     </>
   )
 }

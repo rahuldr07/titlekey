@@ -157,29 +157,65 @@ export const INTAKE: IntakeItem[] = [
 ]
 
 /* ══════════ REPORT GENERATOR — sections; the original flags this whole screen
-   as "a proposal, not a reading of your system" ══════════ */
-export const RSECT: [string, [string, string, string][]][] = [
-  ['Property', [
-    ['Address', '118 Sara Ln, Johnstown, PA 15905', ''],
-    ['Parcel ID', '004-06-012.-000', ''],
-    ['County', 'Cambria', ''],
-    ['Legal description', 'Lot 14, Block 3, Hillcrest Addition', 'check'],
+   as "a proposal, not a reading of your system" ══════════
+   Transcribed verbatim from the original's RSECT: order 4192401-1, McIntosh GA.
+   Each field is [label, value, state, sourcePage] where state is
+   'ok' | 'na' (nothing stated on the instrument) | 'flag' (readers disagree). */
+export type FieldState = 'ok' | 'na' | 'flag'
+export type RField = [label: string, value: string, state: FieldState, page: number | null]
+export type RSection = [section: string, fields: RField[]]
+
+export const RSECT_INITIAL: RSection[] = [
+  ['Vesting deed', [
+    ['Deed type', 'Administrator’s Deed', 'ok', 4],
+    ['Grantor', 'Melissa S. Mundell, as Administrator of the Estate of Bettie W. Stebbins, deceased', 'ok', 4],
+    ['Grantor vesting', 'Not Available', 'na', 4],
+    ['Grantee', 'Mason Homes & Land, LLC, a Georgia limited liability company', 'ok', 4],
+    ['Grantee vesting', 'Not Available', 'na', 4],
+    ['Dated', '11/24/2025', 'ok', 4],
+    ['Recorded', '12/17/2025', 'ok', 4],
+    ['Book/Page', '736/932', 'ok', 4],
+    ['Instrument no', '2025-002687', 'flag', 4],
+    ['Consideration', 'Not Available', 'na', 4],
   ]],
-  ['Vesting', [
-    ['Current owner', 'Marcus T. Bell and Dana R. Bell', ''],
-    ['Deed type', 'Warranty Deed', ''],
-    ['Book/Page', '2214 / 0331', ''],
-    ['Recorded', '06/14/2019', ''],
+  ['Location', [
+    ['Address', '2099 Susie Baker Road NE', 'ok', 1],
+    ['City', 'Townsend', 'ok', 1],
+    ['County', 'McIntosh', 'ok', 1],
+    ['Zip', '31305', 'ok', 1],
   ]],
-  ['Encumbrances', [
-    ['Mortgage', 'First National — $184,000', ''],
-    ['Recorded', '06/14/2019', ''],
-    ['Judgments', 'None found', ''],
-    ['Tax status', 'Paid through 2025', 'check'],
+  ['Assessment', [
+    ['Tax ID', '0061E 0006', 'ok', 7],
+    ['Land', '$28,900.00', 'ok', 7],
+    ['Building', '$0.00', 'ok', 7],
+    ['Total', '$28,900.00', 'ok', 7],
   ]],
-  ['Chain of title', [
-    ['Prior deed', 'Book 1988 / Page 0114', ''],
-    ['Prior owner', 'Hillcrest Development LLC', ''],
-    ['Conveyed', '03/02/2011', ''],
+  ['Security instrument', [
+    ['Type', 'Deed to Secure Debt', 'ok', 9],
+    ['Mortgagor', 'Mason Homes & Land, LLC', 'ok', 9],
+    ['Mortgagee', 'Premier Realty Investments', 'ok', 9],
+    ['Amount', '$250,000.00', 'ok', 9],
+    ['Recorded', '12/17/2025', 'ok', 9],
+    ['Book/Page', '736/935', 'ok', 9],
+    ['Instrument no', '2025-002688', 'ok', 9],
+    ['Open ended', 'No', 'ok', 9],
+    ['MIN', 'Not Available', 'na', 9],
   ]],
+  ['Judgments / liens', [
+    ['Count', '00', 'ok', null],
+  ]],
+  ['Exceptions', [
+    ['Type', 'Scrivener’s Affidavit', 'ok', 12],
+    ['Recorded', '01/14/2026', 'ok', 12],
+    ['Book/Page', '738/76', 'ok', 12],
+  ]],
+]
+
+/* The original's report templates table — Templates tab. */
+export const RTEMPLATES: [string, string, string, string, string, string][] = [
+  ['NJ — Standard', 'NJ', '3 samples', '214 reports', 'Live', 'v'],
+  ['MGR — Standard', 'MGR', '3 samples', '1,436 reports', 'Live', 'v'],
+  ['CSS — Refi', 'CSS', '3 samples', '790 reports', 'Live', 'v'],
+  ['Internal call-back sheet', '—', '2 samples', '96 reports', 'Live', 'v'],
+  ['Morris James', 'Morris James', '1 sample', '0', 'Draft — needs 2 more', 'r'],
 ]
