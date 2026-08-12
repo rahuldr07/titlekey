@@ -10,7 +10,10 @@ import { QCCRIT, QCRULES, QCSCALE } from '@/data/seed2'
 import {
   daySummary, getRun, curStage, isDone, ordersFor, staffWork, stageTotals,
 } from '@/lib/day'
-import { hh } from '@/lib/format'
+import { fmtDate, hh } from '@/lib/format'
+import {
+  QCDAYS, QPRESETS, getDeliveries, getQCLog, inRange, rangeOf, stageWorkOf, standing,
+} from '@/lib/qc'
 import { orderPlan } from '@/lib/sla'
 import { useSession } from '@/lib/session'
 import { Assume, Banner, Chip, Kpi, PageHead, Sec } from '@/components/ui'
@@ -324,8 +327,175 @@ function ByDepartment({ day }: { day: string }) {
   )
 }
 
-/* ── Quality ── */
+/* ── Quality ──
+   The original splits this tab in two: "The scores" (S._qualityReport, the
+   90-day synthesis) and "How scoring works" (S._qualityCfg, the rule config).
+   React previously shipped only the second half. */
 function Quality() {
+  const [sub, setSub] = useState<'The scores' | 'How scoring works'>('The scores')
+  return (
+    <>
+      <div className="seg" style={{ marginBottom: 18 }}>
+        {(['The scores', 'How scoring works'] as const).map((x) => (
+          <button key={x} className={sub === x ? 'on' : ''} aria-pressed={sub === x}
+            onClick={() => setSub(x)}>{x}</button>
+        ))}
+      </div>
+      {sub === 'How scoring works' ? <QualityCfg /> : <QualityReport />}
+    </>
+  )
+}
+
+/* ── The scores — ported from S._qualityReport ── */
+function QualityReport() {
+  const [preset, setPreset] = useState('30')
+  const r = rangeOf(preset)
+  const dels = getDeliveries().filter((x) => inRange(x.d, r))
+  const rows = getQCLog().filter((x) => inRange(x.d, r))
+  const opportunities = dels.length * 2                    // two QC stages per delivery
+  const cover = opportunities ? Math.round(rows.length / opportunities * 100) : 0
+  const overall = rows.length ? rows.reduce((a, x) => a + x.avg, 0) / rows.length : 0
+  const defects = rows.filter((x) => x.defect)
+  const spread = [...new Set(rows.map((x) => Math.round(x.avg)))].length
+
+  /* per person — keyed on the name stored at rating time, so leavers still appear */
+  const by: Record<string, { n: string; c: number; acc: number; comp: number; fmt: number; def: number }> = {}
+  rows.forEach((x) => {
+    by[x.onName] ??= { n: x.onName, c: 0, acc: 0, comp: 0, fmt: 0, def: 0 }
+    const p = by[x.onName]!
+    p.c++; p.acc += x.acc; p.comp += x.comp; p.fmt += x.fmt; if (x.defect) p.def++
+  })
+  const TW = stageWorkOf(dels)
+  const people = Object.values(by)
+    .map((p) => ({ ...p, o: (p.acc + p.comp + p.fmt) / (3 * p.c), tw: TW[p.n] ?? null }))
+    .sort((x, y) => y.c - x.c)
+
+  /* coverage week by week — the reason a range is worth having */
+  const weeks: { from: Date; to: Date; pct: number; n: number }[] = []
+  for (let end = new Date(r.to); end >= r.from; end = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 7)) {
+    const stt = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 6)
+    const w = { from: stt < r.from ? r.from : stt, to: end }
+    const d2 = getDeliveries().filter((x) => inRange(x.d, w)).length * 2
+    const g = getQCLog().filter((x) => inRange(x.d, w))
+    weeks.unshift({ ...w, pct: d2 ? Math.round(g.length / d2 * 100) : 0, n: g.length })
+    if (weeks.length > 14) break
+  }
+
+  const bar = (
+    <>
+      <div className="fbar" role="group" aria-label="Date range">
+        {QPRESETS.map((p) => (
+          <button key={p[0]} className={`pill ${r.preset === p[0] ? 'on' : ''}`}
+            aria-pressed={r.preset === p[0]} onClick={() => setPreset(p[0])}>{p[1]}</button>
+        ))}
+      </div>
+      <p className="cnt"><span>ⓘ</span> Showing <b>{fmtDate(r.from)}</b> to <b>{fmtDate(r.to)}</b> — every
+        figure below follows this range. History goes back {QCDAYS} days.</p>
+    </>
+  )
+
+  if (!dels.length) {
+    return <>{bar}
+      <div className="empty" style={{ padding: '40px 10px' }}><span className="ei">★</span>
+        <p>No deliveries in this range, so there is nothing to score.</p>
+        <button className="btn g sm" onClick={() => setPreset('30')}>Back to the last 30 days</button>
+      </div></>
+  }
+
+  return (
+    <>
+      {bar}
+      <div className="bnr r"><span className="bi">★</span><div>
+        <div className="bt">{spread <= 2 ? 'These scores are not separating anyone' : 'Coverage is the weak point, not the scale'}</div>
+        {cover}% of the work in this range was rated at all, and the average is {overall.toFixed(2)} out
+        of 5{spread <= 2 ? ' with almost no spread' : ''}. A measure where everyone is near-perfect ranks nobody.
+        <div className="bs">Making a rating mandatory before delivery, and scoring three criteria instead of one, fixes both.</div>
+      </div></div>
+
+      <div className="kpis">
+        <div className="kpi"><div className="t">Delivered</div><div className="v">{dels.length.toLocaleString()}</div>
+          <div className="d gr">{r.label}</div></div>
+        <div className={`kpi ${cover < 90 ? 'warnk' : ''}`}><div className="t">Rated</div>
+          <div className={`v ${cover < 90 ? 'warn' : 'ok'}`}>{cover}%</div>
+          <div className="d gr">{rows.length.toLocaleString()} of {opportunities.toLocaleString()} checks</div></div>
+        <div className="kpi"><div className="t">Average score</div>
+          <div className={`v ${spread <= 2 ? 'warn' : ''}`}>{overall.toFixed(2)}</div>
+          <div className="d gr">{spread <= 2 ? 'no spread' : `${spread} distinct levels`}</div></div>
+        <div className={`kpi ${defects.length ? 'alert' : ''}`}><div className="t">Defects logged</div>
+          <div className="v">{defects.length}</div>
+          <div className="d gr">a 3 or below on any criterion</div></div>
+      </div>
+
+      <div className="card p" style={{ marginTop: 18 }}>
+        <div className="lb">Coverage week by week — is rating becoming a habit?</div>
+        <div style={{ display: 'flex', gap: 5, alignItems: 'flex-end', height: 120, margin: '14px 0 4px' }}>
+          {weeks.map((wk) => (
+            <div key={wk.to.toISOString()} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%', gap: 5 }}
+              title={`${fmtDate(wk.from)} – ${fmtDate(wk.to)}: ${wk.pct}% rated, ${wk.n} checks`}>
+              <span className="mono gr" style={{ fontSize: '10.5px', textAlign: 'center' }}>{wk.pct}%</span>
+              <span style={{ background: wk.pct >= 90 ? 'var(--ok)' : wk.pct >= 70 ? 'var(--brand2)' : 'var(--warn)', borderRadius: '5px 5px 0 0', height: `${Math.max(3, wk.pct)}%` }} />
+              <span className="mono gr" style={{ fontSize: '9.5px', textAlign: 'center' }}>
+                {String(wk.to.getMonth() + 1).padStart(2, '0')}/{String(wk.to.getDate()).padStart(2, '0')}
+              </span>
+            </div>
+          ))}
+        </div>
+        <p className="gr" style={{ fontSize: '12.5px', marginTop: 10 }}>
+          Bars are the share of checks actually filled in, week ending. Amber is below 70%. The scores
+          themselves barely move — coverage is the variable worth watching.
+        </p>
+      </div>
+
+      <div className="card" style={{ marginTop: 18 }}>
+        <div className="ch"><h2>By person</h2>
+          <div className="r gr" style={{ fontSize: '12.5px' }}>{people.length} rated in this range</div></div>
+        <div className="tsc"><table className="mat" style={{ minWidth: 860 }}>
+          <thead><tr>
+            <th>Staff</th>
+            <th style={{ textAlign: 'right' }}>Rated</th>
+            <th style={{ textAlign: 'right' }}>Defects</th>
+            <th style={{ textAlign: 'right' }}>Quality</th>
+            <th style={{ textAlign: 'right' }} title="Stages of work they did in this range">Stages</th>
+            <th style={{ textAlign: 'right' }} title="How often they finished inside budget, next to what others doing the same stages manage">On budget</th>
+            <th style={{ textAlign: 'right' }} title="Median time taken as a multiple of the budget">vs budget</th>
+            <th>Standing</th>
+          </tr></thead>
+          <tbody>
+            {people.map((p) => {
+              const t = p.tw
+              const sd = t ? standing(p.o, t.vsPeers, overall) : null
+              return (
+                <tr key={p.n}>
+                  <td><b>{p.n}</b>{STAFF.some((x) => x.n === p.n) ? '' : <span className="chip n">no longer here</span>}</td>
+                  <td className="n mono">{p.c}</td>
+                  <td className={`n mono ${p.def ? 'warn' : 'gr'}`}>{p.def || '—'}</td>
+                  <td className="n mono">{p.o.toFixed(2)}</td>
+                  <td className="n mono gr">{t ? t.c : '—'}</td>
+                  <td className={`n mono ${t ? (t.vsPeers >= -5 ? 'ok' : t.vsPeers >= -15 ? 'warn' : 'bad') : 'gr'}`}>
+                    {t ? `${t.onBudget}%` : '—'}
+                    {t && <div className="s gr">peers {t.expected}%</div>}
+                  </td>
+                  <td className={`n mono ${t ? (t.ratio <= 1 ? 'ok' : 'warn') : 'gr'}`}>{t ? `${t.ratio.toFixed(2)}×` : '—'}</td>
+                  <td>{sd ? <Chip tone={sd[1]}>{sd[0]}</Chip> : <span className="gr">—</span>}</td>
+                </tr>
+              )
+            })}
+            <tr>
+              <td style={{ fontWeight: 700 }}>Everyone</td>
+              <td className="tot">{rows.length}</td>
+              <td className="tot">{defects.length}</td>
+              <td className="tot">{overall.toFixed(2)}</td>
+              <td colSpan={4} />
+            </tr>
+          </tbody>
+        </table></div>
+      </div>
+    </>
+  )
+}
+
+/* ── How scoring works — the original's S._qualityCfg ── */
+function QualityCfg() {
   const { toast } = useSession()
   return (
     <>

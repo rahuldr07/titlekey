@@ -18,9 +18,10 @@ const dayDate = (i: number) =>
   new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() - (DAYCOUNT - 1 - i))
 const dayKey = (d: Date) => fmtDate(d)
 
-/* the mix is weighted so it reads like a real day's intake rather than a round robin */
-const PRODMIX = ['COS', 'COS', 'COS', 'COS', 'Update', 'Update', 'TOS', 'PRLP', 'LIEN', '10Y', '20Y', '30Y', '40Y', 'FS+']
-const CLIENTMIX = ['MGR', 'MGR', 'MGR', 'MGR', 'MGR', 'CSS', 'CSS', 'NJ', 'Morris James', 'NTC']
+/* the mix is weighted so it reads like a real day's intake rather than a round robin.
+   Exported because the QC history generator draws from the same two mixes. */
+export const PRODMIX = ['COS', 'COS', 'COS', 'COS', 'Update', 'Update', 'TOS', 'PRLP', 'LIEN', '10Y', '20Y', '30Y', '40Y', 'FS+']
+export const CLIENTMIX = ['MGR', 'MGR', 'MGR', 'MGR', 'MGR', 'CSS', 'CSS', 'NJ', 'Morris James', 'NTC']
 
 export interface DayOrder {
   id: string; hr: number; date: Date; dk: string; today: boolean
